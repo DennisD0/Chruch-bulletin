@@ -13,7 +13,13 @@ import type { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 type Stage = "idle" | "uploading" | "processing" | "loading" | "ready" | "error";
 type VoiceFilter = "all" | "choir" | "piano" | "soprano" | "alto" | "tenor" | "bass";
 
-const VOCAL_ROLES: PartRole[] = ["soprano", "alto", "tenor", "bass"];
+// These four are both valid PartRoles and VoiceFilters.
+const VOCAL_ROLES: (PartRole & VoiceFilter)[] = [
+  "soprano",
+  "alto",
+  "tenor",
+  "bass",
+];
 
 /** Pre-processed demo score so the app can be tried instantly, no OMR wait. */
 const DEMO_URL = "/presets/remember-me.mxl";
@@ -520,6 +526,39 @@ export default function Home() {
               />
               <span className="w-20 text-right text-sm font-bold tabular-nums text-blue-900">
                 {bpm} BPM
+              </span>
+            </div>
+
+            {/* Octave shift — raise the pitch if the piano range sits too low */}
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold uppercase tracking-wide text-stone-400">
+                Octave
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => handleOctave(octave - 1)}
+                  disabled={octave <= -2}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-stone-100 text-lg font-bold text-stone-700 transition-colors hover:bg-stone-200 disabled:opacity-40"
+                  aria-label="Octave down"
+                >
+                  −
+                </button>
+                <span className="w-14 text-center text-sm font-bold tabular-nums text-blue-900">
+                  {octave > 0 ? `+${octave}` : octave}
+                </span>
+                <button
+                  onClick={() => handleOctave(octave + 1)}
+                  disabled={octave >= 2}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-stone-100 text-lg font-bold text-stone-700 transition-colors hover:bg-stone-200 disabled:opacity-40"
+                  aria-label="Octave up"
+                >
+                  +
+                </button>
+              </div>
+              <span className="text-xs text-stone-400">
+                {octave === 0
+                  ? "as written"
+                  : `${octave > 0 ? "higher" : "lower"} by ${Math.abs(octave)} octave${Math.abs(octave) > 1 ? "s" : ""}`}
               </span>
             </div>
 

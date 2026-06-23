@@ -39,6 +39,7 @@ const PIANO_SAMPLE_URLS: Record<string, string> = {
 
 interface PartEvent {
   time: string; // Tone.js tick notation e.g. "192i" — plain numbers are seconds, not ticks
+  onsetTicks: number; // numeric onset, for duration math (time is a string)
   pitch: string;
   durationTicks: number;
 }
@@ -97,6 +98,7 @@ export class AudioEngine {
 
             const events: PartEvent[] = part.notes.map((note) => ({
               time: `${note.onsetTicks}i`,
+              onsetTicks: note.onsetTicks,
               pitch: note.pitch,
               durationTicks: note.durationTicks,
             }));
@@ -176,7 +178,7 @@ export class AudioEngine {
     let maxTicks = 0;
     for (const entry of this.entries.values()) {
       for (const event of entry.events) {
-        maxTicks = Math.max(maxTicks, event.time + event.durationTicks);
+        maxTicks = Math.max(maxTicks, event.onsetTicks + event.durationTicks);
       }
     }
     return maxTicks;
