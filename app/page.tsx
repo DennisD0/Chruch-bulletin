@@ -11,8 +11,29 @@ import { partsToMidi } from "@/lib/midi-export";
 import type { AudioEngine } from "@/lib/audio-engine";
 import type { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 
-type Stage = "idle" | "uploading" | "processing" | "loading" | "ready" | "error";
+// The player's own lifecycle, independent of per-song upload/OMR progress.
+type Stage = "idle" | "loading" | "ready" | "error";
 type VoiceFilter = "piano" | "soprano" | "alto" | "tenor" | "bass";
+
+// Each song in the library uploads and runs OMR on its own, in the background,
+// so the user can play a finished one while others are still processing.
+type SongStatus = "uploading" | "processing" | "ready" | "error";
+
+interface Song {
+  /** Stable client-side id (not the OMR jobId). */
+  id: string;
+  /** Display name — the uploaded file's name (or the demo's name). */
+  name: string;
+  status: SongStatus;
+  /** MusicXML URL once ready: a blob: (direct upload) or /api/omr/result/…. */
+  url?: string;
+  /** Progress text while processing. */
+  message?: string;
+  error?: string;
+}
+
+/** How many files may be added in a single selection. */
+const MAX_UPLOAD = 5;
 
 // These four are both valid PartRoles and VoiceFilters.
 const VOCAL_ROLES: (PartRole & VoiceFilter)[] = [
@@ -76,6 +97,12 @@ export default function Home() {
   const [statusMsg, setStatusMsg] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+
+  // The song library: every uploaded file plus the demo, each tracking its own
+  // background upload/OMR progress. `activeSongId` is the one loaded in the player.
+  const [songs, setSongs] = useState<Song[]>([]);
+  const [activeSongId, setActiveSongId] = useState<string | null>(null);
+  const [uploadNote, setUploadNote] = useState<string | null>(null);
 
   const [parts, setParts] = useState<ScorePart[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<VoiceFilter[]>([]);
@@ -423,29 +450,76 @@ export default function Home() {
     }
   }, [buildMeasureRects, drawHighlights]);
 
-  const pollStatus = useCallback(
-    async (jobId: string) => {
-      try {
-        const res = await fetch(`/api/omr/status/${jobId}`);
-        const data = await res.json();
+  /** Patch a single song in the library by id. */
+  const updateSong = useCallback((id: string, patch: Partial<Song>) => {
+    setSongs((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  }, []);
 
-        if (data.status === "error") {
-          setError(data.error || "OMR failed");
-          setStage("error");
-          return;
+  /** Poll a song's OMR job until done/error, updating just that song. */
+  const pollStatus = useCallback(
+    (songId: string, jobId: string) => {
+      const poll = async () => {
+        try {
+          const res = await fetch(`/api/omr/status/${jobId}`);
+          const data = await res.json();
+
+          if (data.status === "error") {
+            updateSong(songId, { status: "error", error: data.error || "OMR failed" });
+            return;
+          }
+          if (data.status === "done") {
+            updateSong(songId, {
+              status: "ready",
+              url: `/api/omr/result/${jobId}`,
+              message: undefined,
+            });
+            return;
+          }
+          updateSong(songId, { message: data.message || "Recognizing notes..." });
+          setTimeout(poll, 1500);
+        } catch (err) {
+          updateSong(songId, {
+            status: "error",
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
-        if (data.status === "done") {
-          await loadScore(`/api/omr/result/${jobId}`);
-          return;
+      };
+      poll();
+    },
+    [updateSong]
+  );
+
+  /** Upload + run OMR for one song in the background (no player interaction). */
+  const processSong = useCallback(
+    async (songId: string, file: File) => {
+      // Direct MusicXML load — skip OMR entirely, ready immediately.
+      if (/\.(mxl|xml|musicxml)$/i.test(file.name)) {
+        updateSong(songId, { status: "ready", url: URL.createObjectURL(file) });
+        return;
+      }
+
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/api/omr/process", { method: "POST", body: form });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || `Upload failed (${res.status})`);
         }
-        setStatusMsg(data.message || "Recognizing notes...");
-        setTimeout(() => pollStatus(jobId), 1500);
+        const { jobId } = await res.json();
+        updateSong(songId, {
+          status: "processing",
+          message: "Recognizing notes (this can take a minute or two)...",
+        });
+        pollStatus(songId, jobId);
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        setStage("error");
+        updateSong(songId, {
+          status: "error",
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     },
-    [loadScore]
+    [updateSong, pollStatus]
   );
 
   /** Reset transport/engine state before loading anything new. */
@@ -469,55 +543,89 @@ export default function Home() {
       setIsPlaying(false);
       setPositionSec(0);
       setDurationSec(0);
-      if (resultUrl?.startsWith("blob:")) URL.revokeObjectURL(resultUrl);
+      // Note: blob: URLs are owned by their Song entry (so a song can be
+      // replayed after switching away) and are revoked in removeSong, not here.
       setResultUrl(null);
       setError(null);
       setFileName(name);
     },
-    [cancelLoop, resultUrl]
+    [cancelLoop]
   );
 
+  /** Load a ready song into the player and make it the active one. */
+  const playSong = useCallback(
+    async (song: Song) => {
+      if (song.status !== "ready" || !song.url) return;
+      if (song.id === activeSongId && (stage === "ready" || stage === "loading")) {
+        return;
+      }
+      setActiveSongId(song.id);
+      resetForLoad(song.name);
+      await loadScore(song.url);
+    },
+    [activeSongId, stage, resetForLoad, loadScore]
+  );
+
+  /** Add the demo to the library and start playing it. */
   const handleDemo = useCallback(async () => {
+    const id =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : String(Date.now());
+    setSongs((prev) =>
+      prev.some((s) => s.url === DEMO_URL)
+        ? prev
+        : [...prev, { id, name: DEMO_NAME, status: "ready", url: DEMO_URL }]
+    );
+    setActiveSongId(id);
     resetForLoad(DEMO_NAME);
     await loadScore(DEMO_URL);
   }, [resetForLoad, loadScore]);
 
-  const handleFile = useCallback(
-    async (file: File) => {
-      resetForLoad(file.name);
+  /** Add up to MAX_UPLOAD files to the library; each processes on its own. */
+  const handleFiles = useCallback(
+    (fileList: FileList) => {
+      const all = Array.from(fileList);
+      const files = all.slice(0, MAX_UPLOAD);
+      setUploadNote(
+        all.length > MAX_UPLOAD
+          ? `Only the first ${MAX_UPLOAD} files were added (max ${MAX_UPLOAD} at a time).`
+          : null
+      );
 
-      // Direct MusicXML load — skip OMR entirely.
-      if (/\.(mxl|xml|musicxml)$/i.test(file.name)) {
-        const url = URL.createObjectURL(file);
-        await loadScore(url);
-        return;
-      }
-
-      setStage("uploading");
-      setStatusMsg("Uploading...");
-
-      try {
-        const form = new FormData();
-        form.append("file", file);
-        const res = await fetch("/api/omr/process", {
-          method: "POST",
-          body: form,
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || `Upload failed (${res.status})`);
-        }
-        const { jobId } = await res.json();
-        setStage("processing");
-        setStatusMsg("Recognizing notes (this can take a minute or two)...");
-        pollStatus(jobId);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        setStage("error");
-      }
+      const newSongs: Song[] = files.map((file) => ({
+        id:
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random()}`,
+        name: file.name,
+        status: "uploading" as const,
+      }));
+      setSongs((prev) => [...prev, ...newSongs]);
+      newSongs.forEach((song, i) => processSong(song.id, files[i]));
     },
-    [pollStatus, loadScore, resetForLoad]
+    [processSong]
   );
+
+  /** Remove a song from the library, freeing its blob URL. */
+  const removeSong = useCallback((id: string) => {
+    setSongs((prev) => {
+      const song = prev.find((s) => s.id === id);
+      if (song?.url?.startsWith("blob:")) URL.revokeObjectURL(song.url);
+      return prev.filter((s) => s.id !== id);
+    });
+    setActiveSongId((cur) => {
+      if (cur !== id) return cur;
+      // Removing the song that's loaded in the player: tear the player down.
+      cancelLoop();
+      engineRef.current?.dispose();
+      engineRef.current = null;
+      setStage("idle");
+      setIsPlaying(false);
+      setFileName(null);
+      return null;
+    });
+  }, [cancelLoop]);
 
   const handlePlay = useCallback(async () => {
     const engine = engineRef.current;
@@ -622,8 +730,14 @@ export default function Home() {
 
   const availableFilters = useMemo(() => filtersForParts(parts), [parts]);
 
-  const busy =
-    stage === "uploading" || stage === "processing" || stage === "loading";
+  const activeSong = useMemo(
+    () => songs.find((s) => s.id === activeSongId) ?? null,
+    [songs, activeSongId]
+  );
+
+  // Only the player blocks on loading now; uploads/OMR run in the background,
+  // so the upload control stays available the whole time.
+  const playerLoading = stage === "loading";
 
   return (
     <div className="min-h-full flex flex-col">
@@ -651,45 +765,114 @@ export default function Home() {
         {/* Upload */}
         <section className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2.5">
-            <label
-              className={`inline-flex cursor-pointer items-center gap-2 rounded-full bg-blue-900 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-800 active:bg-blue-950 ${
-                busy ? "pointer-events-none opacity-50" : ""
-              }`}
-            >
-              {fileName ? "Choose another file" : "Upload sheet music"}
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-blue-900 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-800 active:bg-blue-950">
+              {songs.length > 0 ? "Add more hymns" : "Upload sheet music"}
               <input
                 type="file"
                 accept="image/*,.pdf,.mxl,.xml,.musicxml"
                 className="hidden"
-                disabled={busy}
+                multiple
                 onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleFile(f);
+                  if (e.target.files?.length) handleFiles(e.target.files);
                   e.target.value = "";
                 }}
               />
             </label>
             <button
               onClick={handleDemo}
-              disabled={busy}
-              className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-white px-5 py-2.5 text-sm font-bold text-blue-900 transition-colors hover:bg-blue-50 disabled:pointer-events-none disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-white px-5 py-2.5 text-sm font-bold text-blue-900 transition-colors hover:bg-blue-50"
             >
               Try the demo
             </button>
           </div>
-          {fileName ? (
-            <span className="text-sm text-stone-500 truncate">{fileName}</span>
-          ) : (
-            <p className="text-xs text-stone-400">
-              Accepts an image, PDF, or MusicXML (.mxl / .xml). Or tap{" "}
-              <span className="font-semibold text-blue-900">Try the demo</span>{" "}
-              for an instant example.
-            </p>
+          <p className="text-xs text-stone-400">
+            Pick up to {MAX_UPLOAD} hymns at once (image, PDF, or MusicXML). They
+            upload in the background — play one as soon as it&apos;s ready while the
+            rest keep processing. Or tap{" "}
+            <span className="font-semibold text-blue-900">Try the demo</span> for an
+            instant example.
+          </p>
+          {uploadNote && (
+            <p className="text-xs font-medium text-amber-600">{uploadNote}</p>
           )}
         </section>
 
-        {/* Status / errors */}
-        {busy && (
+        {/* Library — every uploaded hymn with its own status */}
+        {songs.length > 0 && (
+          <section className="flex flex-col gap-2">
+            <span className="text-xs font-bold uppercase tracking-wide text-stone-400">
+              Hymns
+            </span>
+            <ul className="flex flex-col gap-2">
+              {songs.map((song) => {
+                const isActive = song.id === activeSongId;
+                const ready = song.status === "ready";
+                return (
+                  <li
+                    key={song.id}
+                    className={`flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-sm transition-colors ${
+                      isActive
+                        ? "border-blue-300 bg-blue-50"
+                        : "border-stone-100 bg-white"
+                    }`}
+                  >
+                    {/* Status indicator */}
+                    {song.status === "uploading" || song.status === "processing" ? (
+                      <span className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-blue-200 border-t-blue-900" />
+                    ) : song.status === "error" ? (
+                      <span className="shrink-0 text-red-500">⚠</span>
+                    ) : (
+                      <span className="shrink-0 text-blue-900">♪</span>
+                    )}
+
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className={`truncate text-sm font-bold ${
+                          isActive ? "text-blue-900" : "text-stone-700"
+                        }`}
+                      >
+                        {song.name}
+                      </p>
+                      <p className="truncate text-xs text-stone-400">
+                        {song.status === "uploading" && "Uploading…"}
+                        {song.status === "processing" &&
+                          (song.message || "Recognizing notes…")}
+                        {song.status === "ready" &&
+                          (isActive && stage === "ready"
+                            ? "Now playing"
+                            : isActive && stage === "loading"
+                              ? "Loading…"
+                              : "Ready to play")}
+                        {song.status === "error" &&
+                          (song.error || "Failed to process")}
+                      </p>
+                    </div>
+
+                    {ready && (
+                      <button
+                        onClick={() => playSong(song)}
+                        disabled={isActive && (stage === "ready" || stage === "loading")}
+                        className="shrink-0 rounded-full bg-blue-900 px-4 py-1.5 text-xs font-bold text-white transition-colors hover:bg-blue-800 disabled:opacity-40"
+                      >
+                        {isActive && stage === "ready" ? "Playing" : "Play"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => removeSong(song.id)}
+                      aria-label={`Remove ${song.name}`}
+                      className="shrink-0 rounded-full px-2 py-1 text-lg leading-none text-stone-300 transition-colors hover:bg-stone-100 hover:text-stone-500"
+                    >
+                      ×
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
+        {/* Player loading / error */}
+        {playerLoading && (
           <div className="flex items-center gap-3 rounded-2xl border border-stone-100 bg-white px-4 py-3 text-sm text-stone-600 shadow-sm">
             <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-900" />
             {statusMsg}
@@ -704,6 +887,10 @@ export default function Home() {
         {/* Playback + voice controls */}
         {stage === "ready" && (
           <section className="rounded-2xl border border-stone-100 bg-white p-4 sm:p-5 shadow-sm flex flex-col gap-5">
+            {/* Now-playing title */}
+            <p className="truncate text-sm font-black text-blue-900">
+              {fileName ?? activeSong?.name ?? "Score"}
+            </p>
             {/* Transport row */}
             <div className="flex flex-wrap items-center gap-3">
               {isPlaying ? (
