@@ -92,6 +92,21 @@ function newId(): string {
     : `${Date.now()}-${Math.random()}`;
 }
 
+/**
+ * Turn an uploaded file name into a song title: drop the extension and tidy
+ * whitespace. Scanned PDFs carry no embedded title, so the file name — which
+ * users name after the hymn — is the most reliable source.
+ */
+function cleanTitle(fileName: string): string {
+  return (
+    fileName
+      .replace(/\.(pdf|mxl|xml|musicxml|png|jpe?g|gif|webp|bmp|tiff?)$/i, "")
+      .replace(/[_]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim() || fileName
+  );
+}
+
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
   const m = Math.floor(seconds / 60);
@@ -333,7 +348,7 @@ export default function Home() {
     rafRef.current = requestAnimationFrame(tick);
   }, [syncHighlight, drawHighlights, cancelLoop]);
 
-  const loadScore = useCallback(async (musicXmlUrl: string) => {
+  const loadScore = useCallback(async (musicXmlUrl: string, fallbackTitle?: string) => {
     setStage("loading");
     setStatusMsg("Rendering score...");
     setError(null);
@@ -357,6 +372,14 @@ export default function Home() {
 
       const blob = await fetch(musicXmlUrl).then((r) => r.blob());
       await osmd.load(blob);
+
+      // OMR'd scans carry no embedded title (OSMD would draw "Untitled Score"),
+      // so stamp the file-name-derived title on before rendering.
+      const embeddedTitle = osmd.Sheet?.TitleString?.trim();
+      if ((!embeddedTitle || /^untitled/i.test(embeddedTitle)) && fallbackTitle) {
+        osmd.Sheet.TitleString = fallbackTitle;
+      }
+
       // Pack ~4 measures per system (two ends + a couple in the middle): cap
       // the per-line count and zoom out so they actually fit, instead of OSMD's
       // width-driven default that puts a single wide measure on each line. Must
@@ -572,7 +595,7 @@ export default function Home() {
       }
       setActiveSongId(song.id);
       resetForLoad(song.name);
-      await loadScore(song.url);
+      await loadScore(song.url, song.name);
     },
     [activeSongId, stage, resetForLoad, loadScore]
   );
@@ -589,7 +612,7 @@ export default function Home() {
     }
     setActiveSongId(id);
     resetForLoad(DEMO_NAME);
-    await loadScore(DEMO_URL);
+    await loadScore(DEMO_URL, DEMO_NAME);
   }, [resetForLoad, loadScore]);
 
   /** Add up to MAX_UPLOAD files to the library; each processes on its own. */
@@ -605,7 +628,7 @@ export default function Home() {
 
       const newSongs: Song[] = files.map((file) => ({
         id: newId(),
-        name: file.name,
+        name: cleanTitle(file.name),
         status: "uploading" as const,
       }));
       setSongs((prev) => [...prev, ...newSongs]);
