@@ -293,7 +293,9 @@ export default function Home() {
       }
     }
 
-    if (autoScroll) firstBox?.scrollIntoView({ block: "nearest" });
+    if (autoScroll) {
+      firstBox?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
   }, []);
 
   /**
@@ -368,6 +370,18 @@ export default function Home() {
         ]);
 
       if (!containerRef.current) throw new Error("Score container not ready");
+
+      // Tear down the previously loaded score so switching hymns replaces the
+      // view instead of stacking a second SVG below the first.
+      resizeObsRef.current?.disconnect();
+      try {
+        osmdRef.current?.clear();
+      } catch {
+        /* ignore */
+      }
+      osmdRef.current = null;
+      containerRef.current.replaceChildren();
+      overlayRef.current?.replaceChildren();
 
       const osmd = new OpenSheetMusicDisplay(containerRef.current, {
         autoResize: true,

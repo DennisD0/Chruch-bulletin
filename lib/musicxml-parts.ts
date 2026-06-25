@@ -141,6 +141,23 @@ function splitStaff(notes: RawNote[]): { top: NoteEvent[]; second: NoteEvent[] }
   return { top, second };
 }
 
+/**
+ * Whether a staff is written "closed" (two voices stacked as chords, like
+ * SATB hymnals) rather than a single melodic line. A lead melody + piano
+ * arrangement has a monophonic vocal staff that must NOT be split, or it
+ * would become a phantom soprano + identical alto.
+ */
+function isChordal(notes: RawNote[]): boolean {
+  const perOnset = new Map<number, number>();
+  for (const note of notes) {
+    perOnset.set(note.onsetTicks, (perOnset.get(note.onsetTicks) ?? 0) + 1);
+  }
+  let chords = 0;
+  for (const count of perOnset.values()) if (count >= 2) chords += 1;
+  // Need a meaningful share of stacked onsets — a stray chord isn't enough.
+  return perOnset.size > 0 && chords / perOnset.size >= 0.25;
+}
+
 /** Drop notes that repeat the same pitch at the same onset. */
 function dedupe(notes: NoteEvent[]): NoteEvent[] {
   const seen = new Set<string>();
@@ -223,22 +240,36 @@ export function extractParts(sheet: MusicSheet): ScorePart[] {
   }
 
   if (namedVocals.size === 0) {
-    // Closed score: split the upper staff into S/A and the lower into T/B.
-    // Both voices on a staff share that staff for highlighting.
+    // Closed score: the upper staff carries soprano (top) + alto (below) and
+    // the lower carries tenor (top) + bass, stacked as chords. A monophonic
+    // staff is a single melodic line (e.g. a lead-sheet vocal) and is kept
+    // whole rather than duplicated into two identical voices.
     const [upper, lower] = unnamedVocals;
     if (upper) {
-      const { top, second } = splitStaff(collectNotes(upper));
-      addNotes("soprano", top);
-      addNotes("alto", second);
-      addStaves("soprano", upper);
-      addStaves("alto", upper);
+      const notes = collectNotes(upper);
+      if (isChordal(notes)) {
+        const { top, second } = splitStaff(notes);
+        addNotes("soprano", top);
+        addNotes("alto", second);
+        addStaves("soprano", upper);
+        addStaves("alto", upper);
+      } else {
+        addNotes("soprano", notes.map(toNoteEvent));
+        addStaves("soprano", upper);
+      }
     }
     if (lower) {
-      const { top, second } = splitStaff(collectNotes(lower));
-      addNotes("tenor", top);
-      addNotes("bass", second);
-      addStaves("tenor", lower);
-      addStaves("bass", lower);
+      const notes = collectNotes(lower);
+      if (isChordal(notes)) {
+        const { top, second } = splitStaff(notes);
+        addNotes("tenor", top);
+        addNotes("bass", second);
+        addStaves("tenor", lower);
+        addStaves("bass", lower);
+      } else {
+        addNotes("tenor", notes.map(toNoteEvent));
+        addStaves("tenor", lower);
+      }
     }
     for (let i = 2; i < unnamedVocals.length; i++) {
       addNotes("other", collectNotes(unnamedVocals[i]).map(toNoteEvent));
