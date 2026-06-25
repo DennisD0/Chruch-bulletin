@@ -813,20 +813,21 @@ export default function Home() {
 
   return (
     <div className="min-h-full flex flex-col">
-      {/* Header */}
+      {/* Header — matches the church cafe site's top-left brand mark */}
       <header className="bg-white border-b border-stone-100 sticky top-0 z-20 shadow-sm">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-900 text-white">
-            {/* music note */}
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
-              <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z" />
-            </svg>
-          </div>
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-2.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt="New York Church"
+            className="h-9 w-9 shrink-0 object-contain"
+          />
           <div className="min-w-0">
             <h1 className="font-black text-blue-900 text-base leading-tight tracking-tight">
-              Choire Reader Player
+              <span className="block">NEW YORK CHURCH</span>
+              <span className="block whitespace-nowrap">CHOIR HYMN PLAYER</span>
             </h1>
-            <p className="text-stone-400 text-xs mt-0.5 truncate">
+            <p className="text-stone-400 text-xs mt-0.5 tracking-wide truncate">
               Upload sheet music → hear it sung, voice by voice
             </p>
           </div>

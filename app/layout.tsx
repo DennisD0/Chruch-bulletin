@@ -8,9 +8,10 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Choire Reader Player",
+  title: "New York Church Choir Hymn Player",
   description:
     "Upload choral sheet music and hear it played back voice by voice.",
+  icons: { icon: "/logo.png" },
 };
 
 export default function RootLayout({
