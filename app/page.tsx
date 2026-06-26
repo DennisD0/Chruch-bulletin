@@ -8,6 +8,7 @@ import {
   type ScorePart,
 } from "@/lib/musicxml-parts";
 import { partsToMidi } from "@/lib/midi-export";
+import CropModal from "./crop-modal";
 import type { AudioEngine } from "@/lib/audio-engine";
 import type { OpenSheetMusicDisplay } from "opensheetmusicdisplay";
 
@@ -127,6 +128,8 @@ export default function Home() {
   const [songs, setSongs] = useState<Song[]>([]);
   const [activeSongId, setActiveSongId] = useState<string | null>(null);
   const [uploadNote, setUploadNote] = useState<string | null>(null);
+  // Photos awaiting the crop step, processed one at a time.
+  const [cropQueue, setCropQueue] = useState<File[]>([]);
 
   const [parts, setParts] = useState<ScorePart[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<VoiceFilter[]>([]);
@@ -649,16 +652,9 @@ export default function Home() {
   }, [resetForLoad, loadScore]);
 
   /** Add up to MAX_UPLOAD files to the library; each processes on its own. */
-  const handleFiles = useCallback(
-    (fileList: FileList) => {
-      const all = Array.from(fileList);
-      const files = all.slice(0, MAX_UPLOAD);
-      setUploadNote(
-        all.length > MAX_UPLOAD
-          ? `Only the first ${MAX_UPLOAD} files were added (max ${MAX_UPLOAD} at a time).`
-          : null
-      );
-
+  /** Register files as library songs and kick off their background processing. */
+  const addToLibrary = useCallback(
+    (files: File[]) => {
       const newSongs: Song[] = files.map((file) => ({
         id: newId(),
         name: cleanTitle(file.name),
@@ -669,6 +665,41 @@ export default function Home() {
     },
     [processSong]
   );
+
+  const handleFiles = useCallback(
+    (fileList: FileList) => {
+      const all = Array.from(fileList);
+      const files = all.slice(0, MAX_UPLOAD);
+      setUploadNote(
+        all.length > MAX_UPLOAD
+          ? `Only the first ${MAX_UPLOAD} files were added (max ${MAX_UPLOAD} at a time).`
+          : null
+      );
+
+      // Photos go through the crop step (one at a time) so the user can frame
+      // the intended hymn; PDFs/MusicXML go straight to the library.
+      const isPhoto = (f: File) =>
+        f.type.startsWith("image/") ||
+        /\.(jpe?g|png|gif|bmp|tiff?|webp|heic|heif)$/i.test(f.name);
+      const photos = files.filter(isPhoto);
+      const rest = files.filter((f) => !isPhoto(f));
+      if (rest.length) addToLibrary(rest);
+      if (photos.length) setCropQueue((q) => [...q, ...photos]);
+    },
+    [addToLibrary]
+  );
+
+  /** Finish cropping the current photo: add the chosen region to the library. */
+  const handleCropConfirm = useCallback(
+    (cropped: File) => {
+      addToLibrary([cropped]);
+      setCropQueue((q) => q.slice(1));
+    },
+    [addToLibrary]
+  );
+  const handleCropCancel = useCallback(() => {
+    setCropQueue((q) => q.slice(1));
+  }, []);
 
   /** Remove a song from the library, freeing its blob URL. */
   const removeSong = useCallback((id: string) => {
@@ -1121,6 +1152,15 @@ export default function Home() {
           </div>
         </section>
       </main>
+
+      {cropQueue.length > 0 && (
+        <CropModal
+          key={cropQueue.length}
+          file={cropQueue[0]}
+          onConfirm={handleCropConfirm}
+          onCancel={handleCropCancel}
+        />
+      )}
     </div>
   );
 }
