@@ -110,59 +110,18 @@ async function detectPageCrop(oriented: Buffer): Promise<sharp.Region | null> {
   }
 }
 
-/** Render the EXIF-corrected image rotated by `deg`, grayscaled and downscaled. */
-async function candidate(input: Uint8Array, deg: number): Promise<Buffer> {
-  let pipe = sharp(input, { failOn: "none" }).rotate();
-  if (deg) pipe = pipe.rotate(deg);
-  return pipe
-    .grayscale()
-    .resize({ width: 1100, height: 1100, fit: "inside" })
-    .png()
-    .toBuffer();
-}
-
-/**
- * Decide how to rotate the EXIF-corrected image so it stands upright. We OCR
- * all four 90° orientations and keep whichever reads as the most real text —
- * upright text recognizes far better than sideways or upside-down. This is
- * more robust than a geometry heuristic (staff-line direction), which false-
- * positives on busy pages and can't tell up from down. Returns 0/90/180/270.
- */
-async function uprightRotation(input: Uint8Array): Promise<number> {
-  try {
-    const { createWorker } = await import("tesseract.js");
-    const worker = await createWorker("eng");
-    try {
-      let best = 0;
-      let bestScore = -1;
-      for (const deg of [0, 90, 180, 270]) {
-        const { data } = await worker.recognize(await candidate(input, deg));
-        const letters = (data.text.match(/[A-Za-z]/g) ?? []).length;
-        const score = letters * (data.confidence ?? 0);
-        if (score > bestScore) {
-          bestScore = score;
-          best = deg;
-        }
-      }
-      return best;
-    } finally {
-      await worker.terminate();
-    }
-  } catch {
-    return 0; // OCR unavailable: trust EXIF orientation only
-  }
-}
-
 /**
  * Clean up a photographed/scanned page before OMR so it survives real-world
- * conditions — bad/uneven lighting, shadows, low contrast, small or sideways
- * shots. We auto-orient (EXIF + a content-based 90° turn so staves run
- * horizontally), normalize size, go grayscale, then apply CLAHE (Contrast
- * Limited Adaptive Histogram Equalization) which equalizes contrast *locally*
- * in tiles — the key to rescuing a page that's bright on one side and shadowed
- * on the other — and finally sharpen. Audiveris does its own adaptive
- * binarization, so we deliberately stop short of a hard global threshold
- * (which destroys shadowed regions).
+ * conditions — bad/uneven lighting, shadows, low contrast, small shots. We
+ * honor EXIF orientation, isolate a single page (so a stray facing page can't
+ * break OMR), normalize size, go grayscale, then apply CLAHE (Contrast Limited
+ * Adaptive Histogram Equalization) which equalizes contrast *locally* in tiles
+ * — the key to rescuing a page bright on one side and shadowed on the other —
+ * and finally sharpen. Audiveris does its own adaptive binarization, so we
+ * stop short of a hard global threshold (which destroys shadowed regions).
+ *
+ * Orientation (including sideways shots) is handled client-side in the crop
+ * step, which hands us an upright image — so there's no server-side OCR here.
  *
  * Returns a PNG buffer, or null if preprocessing fails (caller keeps original).
  */
@@ -170,13 +129,7 @@ export async function preprocessImage(
   input: Uint8Array
 ): Promise<Buffer | null> {
   try {
-    const turn = await uprightRotation(input);
-
-    // Render the EXIF + upright-turned image once, then isolate a single page
-    // (so an open-book photo's facing page doesn't break OMR).
-    let oriented = sharp(input, { failOn: "none" }).rotate();
-    if (turn) oriented = oriented.rotate(turn);
-    const orientedBuf = await oriented.toBuffer();
+    const orientedBuf = await sharp(input, { failOn: "none" }).rotate().toBuffer();
 
     const crop = await detectPageCrop(orientedBuf);
     let base = sharp(orientedBuf);
