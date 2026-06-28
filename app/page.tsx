@@ -135,6 +135,10 @@ export default function Home() {
   const [selectedRoles, setSelectedRoles] = useState<VoiceFilter[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [bpm, setBpm] = useState(DEFAULT_BPM);
+  // Subtle human-like timing/dynamic variation. A ref mirrors it so a freshly
+  // built engine (one per loaded score) can re-apply the user's choice.
+  const [humanize, setHumanize] = useState(false);
+  const humanizeRef = useRef(false);
   const [positionSec, setPositionSec] = useState(0);
   const [durationSec, setDurationSec] = useState(0);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
@@ -531,6 +535,7 @@ export default function Home() {
       engineRef.current = engine;
       engine.setBpm(startBpm);
       engine.setTranspose(DEFAULT_OCTAVE * 12);
+      engine.setHumanize(humanizeRef.current);
 
       // Start with every part selected and audible; the user narrows from there.
       const initialSelection = filtersForParts(scoreParts);
@@ -828,6 +833,12 @@ export default function Home() {
     engineRef.current?.setBpm(value);
     setBpm(value);
     setDurationSec(engineRef.current?.getDurationSeconds() ?? 0);
+  }, []);
+
+  const handleHumanize = useCallback((value: boolean) => {
+    humanizeRef.current = value;
+    engineRef.current?.setHumanize(value);
+    setHumanize(value);
   }, []);
 
   const baseFileName = useMemo(
@@ -1133,6 +1144,32 @@ export default function Home() {
                 {bpm} BPM
               </span>
             </div>
+
+            {/* Humanize — subtle timing/dynamic variation for a less robotic feel */}
+            <label className="flex cursor-pointer items-center gap-3 select-none">
+              <span className="text-xs font-bold uppercase tracking-wide text-stone-400">
+                Humanize
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={humanize}
+                aria-label="Humanize"
+                onClick={() => handleHumanize(!humanize)}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+                  humanize ? "bg-blue-900" : "bg-stone-300"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                    humanize ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+              <span className="text-xs text-stone-400">
+                natural timing &amp; dynamics
+              </span>
+            </label>
 
             {/* Voice selector — multi-select; only chosen parts play */}
             <div className="flex flex-col gap-2">

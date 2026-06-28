@@ -57,10 +57,22 @@ interface EngineEntry {
  * destination. Note onsets are scheduled in Transport ticks, so changing
  * the Transport bpm re-paces playback without re-scheduling anything.
  */
+/**
+ * "Humanize" amounts. Real singers don't attack perfectly together or hold a
+ * constant dynamic; these add small per-note timing and loudness variation so
+ * the four voices breathe instead of sounding mechanically locked. Kept subtle
+ * on purpose — large values read as sloppy, not human.
+ */
+const HUMANIZE_TIME_SEC = 0.018; // max ± onset jitter, seconds
+const HUMANIZE_BASE_VELOCITY = 0.85; // center loudness (0..1)
+const HUMANIZE_VELOCITY_RANGE = 0.15; // ± loudness variation
+
 export class AudioEngine {
   private entries = new Map<string, EngineEntry>();
   /** Live semitone transpose applied to every scheduled note (12 = +1 octave). */
   private transpose = 0;
+  /** When on, add subtle per-note timing/dynamic variation. Read live. */
+  private humanize = false;
 
   /**
    * (Re)builds the playback graph for the given parts. Resolves once all
@@ -112,7 +124,18 @@ export class AudioEngine {
           this.transpose === 0
             ? value.pitch
             : Tone.Frequency(value.pitch).transpose(this.transpose).toNote();
-        sampler.triggerAttackRelease(pitch, durationSec, time);
+        // Humanize is read live too, so the toggle takes effect mid-play. The
+        // jitter is symmetric but tiny relative to Tone's lookahead, so a
+        // slightly-earlier onset still schedules safely in the near future.
+        if (this.humanize) {
+          const when = time + (Math.random() - 0.5) * 2 * HUMANIZE_TIME_SEC;
+          const velocity =
+            HUMANIZE_BASE_VELOCITY +
+            (Math.random() - 0.5) * 2 * HUMANIZE_VELOCITY_RANGE;
+          sampler.triggerAttackRelease(pitch, durationSec, Math.max(0, when), velocity);
+        } else {
+          sampler.triggerAttackRelease(pitch, durationSec, time);
+        }
       }, events);
       tonePart.start(0);
 
@@ -135,6 +158,15 @@ export class AudioEngine {
 
   getTranspose(): number {
     return this.transpose;
+  }
+
+  /** Toggle subtle human-like timing/dynamic variation. Live. */
+  setHumanize(on: boolean): void {
+    this.humanize = on;
+  }
+
+  getHumanize(): boolean {
+    return this.humanize;
   }
 
   setMute(id: string, mute: boolean): void {
