@@ -4,13 +4,28 @@ import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import JSZip from "jszip";
 import path from "path";
 
-const AUDIVERIS_EXE = path.join(
+const AUDIVERIS_ROOT = path.join(
   process.cwd(),
   "tools",
   "audiveris",
-  "Audiveris",
-  "Audiveris.exe"
+  "Audiveris"
 );
+const AUDIVERIS_JAVA = path.join(AUDIVERIS_ROOT, "runtime", "bin", "java.exe");
+const AUDIVERIS_APP = path.join(AUDIVERIS_ROOT, "app");
+const AUDIVERIS_JAVA_ARGS = [
+  "-Djpackage.app-version=5.10.2",
+  "--add-exports=java.desktop/sun.awt.image=ALL-UNNAMED",
+  "--enable-native-access=ALL-UNNAMED",
+  "-Dfile.encoding=UTF-8",
+  "-Xms512m",
+  "-Xmx8G",
+  "-cp",
+  path.join(AUDIVERIS_APP, "*"),
+  "Audiveris",
+];
+
+const STARTUP_TIMEOUT_MS = 30_000;
+const INACTIVITY_TIMEOUT_MS = 5 * 60_000;
 
 // Tesseract language data for Audiveris's OCR (titles, tempo, lyrics). Drop
 // eng.traineddata / kor.traineddata (full tessdata, with the legacy engine
@@ -298,7 +313,7 @@ export function runAudiveris(
     // ask for Korean + English (these are Korean/English hymnals). Without the
     // data, run as before (no text OCR) rather than fail.
     const hasOcr = existsSync(TESSDATA_DIR);
-    const args = ["-batch", "-export"];
+    const args = [...AUDIVERIS_JAVA_ARGS, "-batch", "-export"];
     if (hasOcr) {
       args.push(
         "-constant",
@@ -316,7 +331,10 @@ export function runAudiveris(
 
     args.push("-output", outputDir, "--", inputPath);
 
-    const proc = spawn(AUDIVERIS_EXE, args, {
+    // Invoke the bundled JVM directly. The Windows jpackage .exe occasionally
+    // leaves two idle launcher processes without ever starting Java, which
+    // made a queued PDF remain "processing" forever.
+    const proc = spawn(AUDIVERIS_JAVA, args, {
       windowsHide: true,
       env: hasOcr
         ? { ...process.env, TESSDATA_PREFIX: TESSDATA_DIR }
@@ -324,8 +342,38 @@ export function runAudiveris(
     });
 
     let outputTail = "";
+    let settled = false;
+    let sawOutput = false;
+    let inactivityTimer: NodeJS.Timeout | null = null;
+
+    const fail = (error: AudiverisError) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(startupTimer);
+      if (inactivityTimer) clearTimeout(inactivityTimer);
+      proc.kill();
+      reject(error);
+    };
+
+    const armInactivityTimer = () => {
+      if (inactivityTimer) clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(
+        () => fail(new AudiverisError("Audiveris stopped producing progress")),
+        INACTIVITY_TIMEOUT_MS
+      );
+    };
+
+    const startupTimer = setTimeout(() => {
+      if (!sawOutput) {
+        fail(new AudiverisError("Audiveris did not start within 30 seconds"));
+      }
+    }, STARTUP_TIMEOUT_MS);
+
     const capture = (chunk: Buffer) => {
       const text = chunk.toString();
+      sawOutput = true;
+      clearTimeout(startupTimer);
+      armInactivityTimer();
       outputTail = (outputTail + text).slice(-4000);
       onProgress?.(text);
     };
@@ -333,10 +381,14 @@ export function runAudiveris(
     proc.stderr?.on("data", capture);
 
     proc.on("error", (err) => {
-      reject(new AudiverisError(`Failed to start Audiveris: ${err.message}`));
+      fail(new AudiverisError(`Failed to start Audiveris: ${err.message}`));
     });
 
     proc.on("close", async (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(startupTimer);
+      if (inactivityTimer) clearTimeout(inactivityTimer);
       try {
         // Some Audiveris books contain one broken movement but still export a
         // valid sibling score before exiting nonzero. Validate candidates

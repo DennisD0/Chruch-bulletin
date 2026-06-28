@@ -39,9 +39,17 @@ server-*.log
 
 # local OMR engine (downloaded by setup, see tools/README.md)
 /tools
+/.tools
 
 # OMR working files (uploads, job output)
 /omr-data
+/tmp
+
+# local demo server and tunnel logs
+/server.out.log
+/server.err.log
+/tunnel.out.log
+/tunnel.err.log
 
 # typescript
 *.tsbuildinfo

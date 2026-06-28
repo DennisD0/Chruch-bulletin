@@ -852,9 +852,8 @@ export default function Home() {
             className="h-9 w-9 shrink-0 object-contain"
           />
           <div className="min-w-0">
-            <h1 className="font-black text-blue-900 text-base leading-tight tracking-tight">
-              <span className="block">NEW YORK CHURCH</span>
-              <span className="block whitespace-nowrap">CHOIR HYMN PLAYER</span>
+            <h1 className="whitespace-nowrap font-black leading-tight tracking-tight text-blue-900 text-[clamp(0.78rem,4vw,1rem)]">
+              NEW YORK CHURCH CHOIR
             </h1>
             <p className="text-stone-400 text-xs mt-0.5 tracking-wide truncate">
               Upload sheet music → hear it sung, voice by voice

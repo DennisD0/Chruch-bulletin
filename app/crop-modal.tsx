@@ -17,7 +17,15 @@ type Mode = "move" | "nw" | "ne" | "sw" | "se";
 // inset silently clipped one of them and left Audiveris with broken systems.
 // The horizontal inset isolates the intended page from a facing page; unlike
 // the old box, it does not trim the score vertically.
-const INIT: Box = { x: 0.08, y: 0, w: 0.84, h: 1 };
+const PHOTO_INIT: Box = { x: 0.08, y: 0, w: 0.84, h: 1 };
+const FULL_IMAGE: Box = { x: 0, y: 0, w: 1, h: 1 };
+
+/** Screenshots/scans are already framed; camera formats usually need gutters removed. */
+function initialBox(file: File): Box {
+  return file.type === "image/png" || /\.(?:png|webp)$/i.test(file.name)
+    ? FULL_IMAGE
+    : PHOTO_INIT;
+}
 
 /**
  * When a page holds two hymns (common in hymnals), guess the one the user
@@ -68,7 +76,7 @@ export default function CropModal({
   onCancel: () => void;
 }) {
   const [src, setSrc] = useState("");
-  const [box, setBox] = useState<Box>(INIT);
+  const [box, setBox] = useState<Box>(() => initialBox(file));
   const [hint, setHint] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [hymnNumber, setHymnNumber] = useState<string | null>(null);
@@ -213,7 +221,7 @@ export default function CropModal({
     ctx.rotate(Math.PI / 2);
     ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
     c.toBlob((blob) => blob && swapSrc(blob), "image/jpeg", 0.9);
-    setBox(INIT);
+    setBox(initialBox(file));
     setHymnNumber(null);
     // Re-run hymn auto-detection on the new orientation.
     detected.current = false;

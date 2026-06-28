@@ -71,6 +71,7 @@ export async function POST(req: NextRequest) {
   createJob({
     id: jobId,
     status: "pending",
+    message: "Queued for note recognition...",
     inputPath,
     outputDir,
     createdAt: Date.now(),
@@ -105,7 +106,11 @@ async function processJob(
       });
     }
     try {
-      const resultPath = await runAudiveris(attempt.path, attemptOutput);
+      const resultPath = await runAudiveris(
+        attempt.path,
+        attemptOutput,
+        createProgressReporter(jobId)
+      );
       const quality = await scoreMusicXmlArchive(resultPath);
       if (isReliableNoteTranscription(quality)) {
         results.push({ path: resultPath, label: attempt.label, score: quality.score });
@@ -139,4 +144,34 @@ async function processJob(
     message: "Recognition failed",
     error: errors.join("\n\n"),
   });
+}
+
+/** Turn Audiveris's multi-page log into useful progress for the polling UI. */
+function createProgressReporter(jobId: string): (chunk: string) => void {
+  let buffered = "";
+  let totalPages: number | null = null;
+  let currentPage = 0;
+
+  return (chunk) => {
+    buffered += chunk;
+    const lines = buffered.split(/\r?\n/);
+    buffered = lines.pop() ?? "";
+
+    for (const line of lines) {
+      const totalMatch = line.match(/\|\s+(\d+)\s+sheets?\s+in\b/i);
+      if (totalMatch) totalPages = Number(totalMatch[1]);
+
+      const pageMatch = line.match(/\[[^\]]*#(\d+)\].*StepMonitoring/i);
+      const singlePageStep = totalPages === 1 && /StepMonitoring/i.test(line);
+      if (!pageMatch && !singlePageStep) continue;
+      const page = pageMatch ? Number(pageMatch[1]) : 1;
+      if (!Number.isFinite(page) || page <= currentPage) continue;
+      currentPage = page;
+      updateJob(jobId, {
+        message: totalPages
+          ? `Recognizing page ${page} of ${totalPages}...`
+          : `Recognizing page ${page}...`,
+      });
+    }
+  };
 }
