@@ -1,8 +1,10 @@
 import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
+import os from "os";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import {
+  isAudiverisAvailable,
   isReliableNoteTranscription,
   runAudiveris,
   scoreMusicXmlArchive,
@@ -12,7 +14,10 @@ import { isImageFile, preprocessImageVariants } from "@/lib/image-preprocess";
 import { enqueueOmr } from "@/lib/omr-queue";
 import { getHymnPreset, hymnNumberFromFilename } from "@/lib/hymn-presets";
 
-const DATA_DIR = path.join(process.cwd(), "omr-data");
+// Use a writable temp dir: serverless hosts (Vercel) mount the project read-only
+// and only allow writes under the OS temp dir. Jobs store absolute paths, so the
+// status/result routes don't depend on this location.
+const DATA_DIR = path.join(os.tmpdir(), "omr-data");
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
@@ -20,6 +25,28 @@ export async function POST(req: NextRequest) {
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+  }
+
+  // For a hymn with a user-supplied canonical score, prefer that score over a
+  // low-confidence photo transcription. The cropper prefixes the inferred
+  // hymn number to the upload filename. (Cheap, no disk I/O — decide before we
+  // write anything or check for the recognition engine.)
+  const hymnNumber = hymnNumberFromFilename(file.name);
+  const preset = hymnNumber ? getHymnPreset(hymnNumber) : null;
+
+  // Photo/PDF recognition needs the bundled Audiveris engine, which only exists
+  // in the desktop build. On the hosted site it's absent, so fail clearly here
+  // instead of crashing on a read-only filesystem or a missing binary.
+  if (!preset && !isAudiverisAvailable()) {
+    return NextResponse.json(
+      {
+        error:
+          "Photo and PDF recognition isn't available on the hosted site — it " +
+          "needs the desktop recognition engine. Upload a MusicXML " +
+          "(.mxl / .xml / .musicxml) file here, or use the desktop app for photos.",
+      },
+      { status: 503 }
+    );
   }
 
   const jobId = randomUUID();
@@ -34,11 +61,6 @@ export async function POST(req: NextRequest) {
   const originalPath = path.join(inputDir, `score-original${originalExt}`);
   await fs.writeFile(originalPath, originalBuffer);
 
-  // For a hymn with a user-supplied canonical score, prefer that score over a
-  // low-confidence photo transcription. The cropper prefixes the inferred
-  // hymn number to the upload filename.
-  const hymnNumber = hymnNumberFromFilename(file.name);
-  const preset = hymnNumber ? getHymnPreset(hymnNumber) : null;
   if (preset) {
     const resultPath = path.join(outputDir, `hymn-${hymnNumber}.mxl`);
     await fs.writeFile(resultPath, preset);

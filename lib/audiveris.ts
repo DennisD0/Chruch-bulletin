@@ -39,6 +39,16 @@ const TESSDATA_DIR = path.join(
 
 export class AudiverisError extends Error {}
 
+/**
+ * Whether the bundled Audiveris OMR engine is actually present. It ships only
+ * with the desktop build (a Windows JVM under tools/), so serverless deploys
+ * such as Vercel don't have it — callers use this to fail with a clear message
+ * instead of spawning a missing binary.
+ */
+export function isAudiverisAvailable(): boolean {
+  return existsSync(AUDIVERIS_JAVA);
+}
+
 export interface MusicXmlQuality {
   score: number;
   pitchedNotes: number;
