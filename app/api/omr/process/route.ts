@@ -165,10 +165,17 @@ async function processJob(
       const quality = await scoreMusicXmlArchive(resultPath);
       if (isReliableNoteTranscription(quality)) {
         results.push({ path: resultPath, label: attempt.label, score: quality.score });
-        // The first attempt is the cleaned-up image, which is the best input.
-        // If it already yields reliable notation, skip the slower fallback
-        // pass(es) — each one is a full multi-minute OMR run on dense pages.
-        break;
+        // Stop early only when this pass is clearly excellent — a well-balanced
+        // 4-part split with broad coverage and a real time signature, which a
+        // second pass is very unlikely to beat. For a marginal-but-passing
+        // result, keep going and let the best of the attempts win (accuracy
+        // over speed), since each fallback is a full multi-minute OMR run.
+        const clearlyExcellent =
+          quality.partNoteBalance >= 0.8 &&
+          quality.partDurationBalance >= 0.75 &&
+          quality.pitchedNotes >= 120 &&
+          quality.hasTimeSignature;
+        if (clearlyExcellent) break;
       } else {
         errors.push(
           `${attempt.label}: incomplete note transcription ` +

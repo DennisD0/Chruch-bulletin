@@ -140,16 +140,29 @@ export async function preprocessImageVariants(
     let base = sharp(orientedBuf);
     if (crop) base = base.extract(crop);
 
-    // Cap size (and upscale small shots) so CLAHE tiles are a sane scale.
-    const noteGray = await base
+    // Pass 1: grayscale → normalize → resize (and upscale small shots so the
+    // CLAHE tiles and noteheads are a sane scale). normalize() stretches a
+    // faded/low-contrast scan back to the full black–white range; on an
+    // already-crisp screenshot it's a near no-op, so it's safe for both. PNG
+    // intermediate keeps it lossless before the contrast pass.
+    const resized = await base
       .grayscale()
+      .normalize()
       .resize({ width: 3000, height: 3900, fit: "inside", withoutEnlargement: false })
+      .clahe({ width: 128, height: 128, maxSlope: 3 })
+      .png()
+      .toBuffer();
+
+    // Pass 2: light sharpen for crisp noteheads/stems. CLAHE (local contrast,
+    // applied above) rescues a page that's bright on one side and shadowed on
+    // the other — the usual phone-photo failure — while the gentle maxSlope
+    // barely touches an already-even screenshot. Sharpen is a separate libvips
+    // pass: chaining it after clahe on a grayscale image trips "must be UCHAR".
+    const noteGray = await sharp(resized)
       .sharpen({ sigma: 0.7, m1: 0.35, m2: 0.7 })
       .png()
       .toBuffer();
 
-    // CLAHE and sharpen must be separate libvips passes — chaining them on a
-    // grayscale image trips a "must be UCHAR" error.
     return [{ label: "note-preserving grayscale", buffer: noteGray }];
   } catch {
     return [];
