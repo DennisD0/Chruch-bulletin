@@ -130,6 +130,9 @@ export default function Home() {
   // background upload/OMR progress. `activeSongId` is the one loaded in the player.
   const [songs, setSongs] = useState<Song[]>([]);
   const [activeSongId, setActiveSongId] = useState<string | null>(null);
+  // Inline rename: which song's name is being edited, and the working text.
+  const [editingSongId, setEditingSongId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
   const [uploadNote, setUploadNote] = useState<string | null>(null);
   // Photos awaiting the crop step, processed one at a time.
   const [cropQueue, setCropQueue] = useState<File[]>([]);
@@ -567,6 +570,25 @@ export default function Home() {
   const updateSong = useCallback((id: string, patch: Partial<Song>) => {
     setSongs((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   }, []);
+
+  /** Begin inline-editing a song's name (seeds the draft with the current name). */
+  const startRename = useCallback((song: Song) => {
+    setEditingSongId(song.id);
+    setEditDraft(song.name);
+  }, []);
+
+  /** Commit (or cancel, when blank) an inline rename. Keeps the player header
+   * in sync when the renamed song is the one currently loaded. */
+  const commitRename = useCallback(
+    (id: string) => {
+      const name = editDraft.trim();
+      setEditingSongId(null);
+      if (!name) return;
+      updateSong(id, { name });
+      if (activeSongId === id) setFileName(name);
+    },
+    [editDraft, updateSong, activeSongId]
+  );
 
   /** Poll a song's OMR job until done/error, updating just that song. */
   const pollStatus = useCallback(
@@ -1011,13 +1033,30 @@ export default function Home() {
                     )}
 
                     <div className="min-w-0 flex-1">
-                      <p
-                        className={`truncate text-sm font-bold ${
-                          isActive ? "text-blue-900" : "text-stone-700"
-                        }`}
-                      >
-                        {song.name}
-                      </p>
+                      {editingSongId === song.id ? (
+                        <input
+                          autoFocus
+                          value={editDraft}
+                          onChange={(e) => setEditDraft(e.target.value)}
+                          onBlur={() => commitRename(song.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") commitRename(song.id);
+                            else if (e.key === "Escape") setEditingSongId(null);
+                          }}
+                          aria-label="Score name"
+                          className="w-full rounded border border-blue-300 bg-white px-2 py-0.5 text-sm font-bold text-stone-700 outline-none focus:border-blue-500"
+                        />
+                      ) : (
+                        <p
+                          onDoubleClick={() => startRename(song)}
+                          title="Double-click to rename"
+                          className={`truncate text-sm font-bold ${
+                            isActive ? "text-blue-900" : "text-stone-700"
+                          }`}
+                        >
+                          {song.name}
+                        </p>
+                      )}
                       <p className="truncate text-xs text-stone-400">
                         {song.status === "uploading" && "Uploading…"}
                         {song.status === "processing" &&
@@ -1040,6 +1079,15 @@ export default function Home() {
                         className="shrink-0 rounded-full bg-blue-900 px-4 py-1.5 text-xs font-bold text-white transition-colors hover:bg-blue-800 disabled:opacity-40"
                       >
                         {isActive && stage === "ready" ? "Playing" : "Play"}
+                      </button>
+                    )}
+                    {editingSongId !== song.id && (
+                      <button
+                        onClick={() => startRename(song)}
+                        aria-label={`Rename ${song.name}`}
+                        className="shrink-0 rounded-full px-2 py-1 text-sm leading-none text-stone-300 transition-colors hover:bg-stone-100 hover:text-stone-500"
+                      >
+                        ✎
                       </button>
                     )}
                     <button
