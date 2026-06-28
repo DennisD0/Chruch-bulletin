@@ -104,6 +104,9 @@ function cleanTitle(fileName: string): string {
   return (
     fileName
       .replace(/\.(pdf|mxl|xml|musicxml|png|jpe?g|gif|webp|bmp|tiff?)$/i, "")
+      // Drop the internal "NNN-" hymn-number prefix the crop step prepends for
+      // preset routing — it's our artifact, not part of the user's file name.
+      .replace(/^\d{3}-/, "")
       .replace(/[_]+/g, " ")
       .replace(/\s+/g, " ")
       .trim() || fileName
@@ -447,10 +450,9 @@ export default function Home() {
       const blob = await fetch(musicXmlUrl).then((r) => r.blob());
       await osmd.load(blob);
 
-      // OMR'd scans carry no embedded title (OSMD would draw "Untitled Score"),
-      // so stamp the file-name-derived title on before rendering.
-      const embeddedTitle = osmd.Sheet?.TitleString?.trim();
-      if ((!embeddedTitle || /^untitled/i.test(embeddedTitle)) && fallbackTitle) {
+      // Title the rendered score with the file name (the user's chosen name),
+      // overriding any embedded title so what's drawn matches their file.
+      if (fallbackTitle && osmd.Sheet) {
         osmd.Sheet.TitleString = fallbackTitle;
       }
 
@@ -521,11 +523,9 @@ export default function Home() {
             ? preferredTempo
             : DEFAULT_BPM;
 
-      // Surface the title printed on the score (the "music name") when present.
-      const scoreTitle = osmd.Sheet?.TitleString?.trim();
-      if (scoreTitle && !/^untitled/i.test(scoreTitle)) {
-        setFileName(scoreTitle);
-      }
+      // The player title stays as the file name (set in resetForLoad); we do not
+      // override it with the embedded or OCR'd score title — the user wants the
+      // actual uploaded file name shown.
 
       const engine = new AudioEngine();
       setStatusMsg("Loading piano samples...");
@@ -611,22 +611,13 @@ export default function Home() {
         return;
       }
 
-      // OMR drops the printed tempo and never reads the title reliably, so OCR
-      // the header in parallel. Screenshots/scans print both clearly; we use the
-      // OCR'd title as the song name (beating a meaningless "IMG_1234" filename)
-      // and the OCR'd tempo for playback. Best-effort; never blocks.
+      // OMR drops the printed tempo, so OCR the header in parallel just for the
+      // tempo. We deliberately do NOT rename the song from the OCR'd title — the
+      // song keeps the user's file name. Best-effort; never blocks.
       import("@/lib/ocr-tempo")
         .then(({ extractScoreMeta }) => extractScoreMeta(file))
         .then((meta) => {
-          const patch: Partial<Song> = {};
-          if (meta.tempo) patch.ocrTempo = meta.tempo;
-          const generic = /^(img|image|photo|screenshot|scan|untitled|document)[\s_-]*\d*$/i;
-          const base = cleanTitle(file.name);
-          if (meta.title) patch.name = meta.title;
-          else if (meta.hymnNumber && generic.test(base)) {
-            patch.name = `Hymn ${meta.hymnNumber}`;
-          }
-          if (Object.keys(patch).length) updateSong(songId, patch);
+          if (meta.tempo) updateSong(songId, { ocrTempo: meta.tempo });
         })
         .catch(() => {});
 
