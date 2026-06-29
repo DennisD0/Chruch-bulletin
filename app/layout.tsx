@@ -8,9 +8,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "NEW YORK CHURCH CHOIR",
-  description:
-    "Upload choral sheet music and hear it played back voice by voice.",
+  title: "New York Church",
+  description: "New York Church — bulletin editor and choir reader.",
   icons: { icon: "/logo.png" },
 };
 
