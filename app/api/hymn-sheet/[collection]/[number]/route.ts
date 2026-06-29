@@ -6,11 +6,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkIpRate, clientIp } from "@/lib/rate-limit";
 import { toPdfPage, HYMNAL_MAX, type HymnalEdition } from "@/lib/hymnal-map";
 
-// Path to the combined 찬송가 + 은혜찬송 PDF.
-// On Cloud Run this is baked into the image at /app/hymnal/hymnal.pdf.
-// Override with HYMNAL_PDF env var for local dev.
 const HYMNAL_PDF =
   process.env.HYMNAL_PDF ?? path.join(process.cwd(), "hymnal", "hymnal.pdf");
+
+// Renderer script runs outside Next.js's bundler so mupdf's WASM loads cleanly.
+const RENDERER = path.join(process.cwd(), "lib", "render-hymn-page.mjs");
 
 const COLLECTION_TO_EDITION: Record<string, HymnalEdition> = {
   chansonggah: "찬송가",
@@ -45,57 +45,56 @@ export async function GET(
     );
   }
 
-  const pdfPage = toPdfPage(n, edition);
+  const pdfPage = toPdfPage(n, edition); // 1-based
+  const pageIndex = pdfPage - 1; // 0-based for mupdf
 
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "hymn-"));
-  const outPrefix = path.join(tmpDir, "p");
+  const outPath = path.join(
+    os.tmpdir(),
+    `hymn-${collection}-${n}-${Date.now()}.png`
+  );
+
   try {
-    await runPdftoppm(HYMNAL_PDF, pdfPage, outPrefix);
-
-    const files = await fs.readdir(tmpDir);
-    const pngFile = files.find((f) => f.endsWith(".png"));
-    if (!pngFile) throw new Error("pdftoppm did not produce a PNG");
-
-    const pngBuffer = await fs.readFile(path.join(tmpDir, pngFile));
+    await renderPage(HYMNAL_PDF, pageIndex, outPath);
+    const pngBuffer = await fs.readFile(outPath);
     const padded = String(n).padStart(3, "0");
-    return new NextResponse(pngBuffer, {
+    return new NextResponse(new Blob([pngBuffer], { type: "image/png" }), {
       status: 200,
       headers: {
-        "Content-Type": "image/png",
-        "Content-Disposition": `attachment; filename="${padded}장.png"`,
+        "Content-Disposition": `attachment; filename="${padded}.png"`,
         "Cache-Control": "public, max-age=86400",
       },
     });
+  } catch (err) {
+    return NextResponse.json(
+      {
+        error: `Failed to render hymn page: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      },
+      { status: 500 }
+    );
   } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true });
+    await fs.unlink(outPath).catch(() => {});
   }
 }
 
-function runPdftoppm(
+function renderPage(
   pdfPath: string,
-  page: number,
-  outPrefix: string
+  pageIndex: number,
+  outPath: string
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    // 200 DPI → ~1654×2339 px for an A4 page ≈ 3.9 MP, well under Audiveris's
-    // 20 MP hard limit while giving enough detail for OMR.
-    const proc = spawn("pdftoppm", [
-      "-f", String(page),
-      "-l", String(page),
-      "-r", "200",
-      "-png",
-      pdfPath,
-      outPrefix,
-    ]);
-
+    const proc = spawn(
+      process.execPath, // same node binary that's running Next.js
+      [RENDERER, pdfPath, String(pageIndex), outPath],
+      { windowsHide: true }
+    );
     let stderr = "";
     proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-    proc.on("error", (err) =>
-      reject(new Error(`pdftoppm not available: ${err.message}`))
-    );
+    proc.on("error", (err) => reject(new Error(`Failed to start renderer: ${err.message}`)));
     proc.on("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`pdftoppm exited ${code}: ${stderr.trim()}`));
+      else reject(new Error(`Renderer exited ${code}: ${stderr.trim()}`));
     });
   });
 }

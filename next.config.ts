@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
   // the native camera picker still opens, but Next.js blocks dev resources and
   // the React change handler may never show the crop step.
   allowedDevOrigins: ["192.168.1.27"],
+  // mupdf ships a WebAssembly binary. Bundling it through webpack/Turbopack
+  // corrupts the WASM init sequence, so load it directly from node_modules
+  // at runtime instead of letting the bundler touch it.
+  serverExternalPackages: ["mupdf"],
 };
 
 export default nextConfig;
