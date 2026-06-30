@@ -3,8 +3,41 @@ import { spawn } from "child_process";
 import { writeFileSync, mkdirSync, existsSync, rmSync } from "fs";
 import { join } from "path";
 
-const CHROME = `C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe`;
 const DEBUG_PORT = 9333;
+
+interface DevToolsTab {
+  webSocketDebuggerUrl: string;
+}
+
+interface CdpMessage {
+  id?: number;
+  method?: string;
+  result?: unknown;
+  error?: { message?: string };
+}
+
+interface BulletinReadiness {
+  status: "ready" | "error" | "timeout";
+  overflowingSections: string[];
+}
+
+class BulletinOverflowError extends Error {
+  constructor(readonly overflowingSections: string[]) {
+    super(`Content does not fit: ${overflowingSections.join(", ")}`);
+  }
+}
+
+function getChromeDirectory(): string {
+  if (process.env.CHROME_DIRECTORY) return process.env.CHROME_DIRECTORY;
+  const programFiles =
+    process.env.ProgramFiles ?? `${process.env.SystemDrive ?? "C:"}\\Program Files`;
+  return `${programFiles}\\Google\\Chrome\\Application`;
+}
+
+function getPrintUrl(request: Request): string {
+  const configuredBaseUrl = process.env.BULLETIN_BASE_URL?.trim();
+  return new URL("/print", configuredBaseUrl || request.url).toString();
+}
 
 function waitForChrome(timeoutMs = 10_000): Promise<void> {
   const start = Date.now();
@@ -23,7 +56,7 @@ function waitForChrome(timeoutMs = 10_000): Promise<void> {
   });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const tmpDir = join(process.cwd(), ".next", "tmp");
   if (!existsSync(tmpDir)) mkdirSync(tmpDir, { recursive: true });
   const profileDir = join(tmpDir, "chrome-pdf-profile");
@@ -31,50 +64,132 @@ export async function GET() {
   // user session (which silently ignores headless/devtools flags).
   if (existsSync(profileDir)) rmSync(profileDir, { recursive: true, force: true });
 
-  const chrome = spawn(CHROME, [
+  const chromeDirectory = getChromeDirectory();
+  const printUrl = getPrintUrl(request);
+  const chrome = spawn("chrome.exe", [
     "--headless=new",
     "--disable-gpu",
     "--no-sandbox",
     `--remote-debugging-port=${DEBUG_PORT}`,
     `--user-data-dir=${profileDir}`,
-  ], { stdio: "ignore" });
+  ], {
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      PATH: `${chromeDirectory};${process.env.PATH ?? ""}`,
+    },
+  });
+
+  const chromeStartError = new Promise<never>((_, reject) => {
+    chrome.once("error", (error) => {
+      reject(
+        new Error(
+          `Chrome could not start from ${chromeDirectory}. Set CHROME_DIRECTORY to its folder. ${error.message}`
+        )
+      );
+    });
+  });
 
   try {
-    await waitForChrome();
+    await Promise.race([waitForChrome(), chromeStartError]);
 
     const newTabRes = await fetch(
-      `http://127.0.0.1:${DEBUG_PORT}/json/new?http://localhost:3000/print`,
+      `http://127.0.0.1:${DEBUG_PORT}/json/new?${encodeURIComponent(printUrl)}`,
       { method: "PUT" }
     );
-    const tab = await newTabRes.json();
+    if (!newTabRes.ok) {
+      throw new Error(`Chrome could not open the print page (${newTabRes.status})`);
+    }
+
+    const tab = (await newTabRes.json()) as DevToolsTab;
+    if (!tab.webSocketDebuggerUrl) {
+      throw new Error("Chrome did not return a DevTools WebSocket URL");
+    }
     const ws = new WebSocket(tab.webSocketDebuggerUrl);
 
     const pdfBase64: string = await new Promise((resolve, reject) => {
       let msgId = 0;
-      const pending = new Map<number, (result: any) => void>();
+      let printStarted = false;
+      const pending = new Map<
+        number,
+        { resolve: (result: unknown) => void; reject: (error: Error) => void }
+      >();
 
-      const send = (method: string, params: Record<string, unknown> = {}) => {
+      const send = <T,>(method: string, params: Record<string, unknown> = {}) => {
         const id = ++msgId;
-        return new Promise<any>((res) => {
-          pending.set(id, res);
+        return new Promise<T>((resolveMessage, rejectMessage) => {
+          pending.set(id, {
+            resolve: (result) => resolveMessage(result as T),
+            reject: rejectMessage,
+          });
           ws.send(JSON.stringify({ id, method, params }));
         });
       };
 
       ws.onopen = async () => {
-        await send("Page.enable");
-        send("Page.navigate", { url: "http://localhost:3000/print" });
+        try {
+          await send("Page.enable");
+          await send("Runtime.enable");
+          await send("Page.navigate", { url: printUrl });
+        } catch (error) {
+          reject(error);
+        }
       };
 
       ws.onmessage = async (ev: MessageEvent) => {
-        const msg = JSON.parse(ev.data as string);
-        if (msg.id && pending.has(msg.id)) {
-          pending.get(msg.id)!(msg.result);
+        const msg = JSON.parse(ev.data as string) as CdpMessage;
+        if (msg.id !== undefined && pending.has(msg.id)) {
+          const request = pending.get(msg.id)!;
           pending.delete(msg.id);
+          if (msg.error) {
+            request.reject(new Error(msg.error.message || "Chrome DevTools command failed"));
+          } else {
+            request.resolve(msg.result);
+          }
         }
-        if (msg.method === "Page.loadEventFired") {
+        if (msg.method === "Page.loadEventFired" && !printStarted) {
+          printStarted = true;
           try {
-            const result = await send("Page.printToPDF", {
+            const readinessResult = await send<{
+              result?: { value?: BulletinReadiness };
+            }>("Runtime.evaluate", {
+              expression: `new Promise((resolve) => {
+                const root = document.getElementById("bulletin-preview");
+                const read = () => {
+                  const status = root?.dataset.fitStatus;
+                  if (status === "ready" || status === "error") {
+                    resolve({
+                      status,
+                      overflowingSections: (root.dataset.overflowingSections || "")
+                        .split(",")
+                        .filter(Boolean),
+                    });
+                    return true;
+                  }
+                  return false;
+                };
+                if (read()) return;
+                const observer = new MutationObserver(() => {
+                  if (read()) observer.disconnect();
+                });
+                if (root) observer.observe(root, { attributes: true });
+                setTimeout(() => {
+                  observer.disconnect();
+                  resolve({ status: "timeout", overflowingSections: [] });
+                }, 10000);
+              })`,
+              awaitPromise: true,
+              returnByValue: true,
+            });
+            const readiness = readinessResult.result?.value;
+            if (!readiness || readiness.status === "timeout") {
+              throw new Error("Bulletin layout did not become ready for printing");
+            }
+            if (readiness.status === "error") {
+              throw new BulletinOverflowError(readiness.overflowingSections);
+            }
+
+            const result = await send<{ data?: string }>("Page.printToPDF", {
               preferCSSPageSize: true,
               printBackground: true,
               // The bulletin is always exactly 2 pages; total content height lands on
@@ -82,6 +197,7 @@ export async function GET() {
               // quirk that appends one extra blank page. Pin the range to suppress it.
               pageRanges: "1-2",
             });
+            if (!result.data) throw new Error("Chrome returned an empty PDF");
             resolve(result.data);
           } catch (e) {
             reject(e);
@@ -103,6 +219,15 @@ export async function GET() {
       },
     });
   } catch (err: unknown) {
+    if (err instanceof BulletinOverflowError) {
+      return NextResponse.json(
+        {
+          error: err.message,
+          overflowingSections: err.overflowingSections,
+        },
+        { status: 422 }
+      );
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });
   } finally {

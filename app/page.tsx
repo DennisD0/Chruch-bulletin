@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useCallback } from "react";
 import BulletinPreview, { PAGE_W, PAGE_H } from "@/app/components/BulletinPreview";
+import BulletinFitController from "@/app/components/BulletinFitController";
 import type {
   BulletinData,
   ServiceRow,
-  SeminarRow,
   MemoryVerse,
   CleaningRow,
   WeekScheduleDay,
@@ -1076,16 +1076,21 @@ function CleaningTab({
 function PreviewTab({ data }: { data: BulletinData }) {
   const [zoom, setZoom] = useState(0.72);
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
   const scaledH = (PAGE_H * 2 + 6) * zoom;
 
   async function exportPDF() {
     setExporting(true);
+    setExportError("");
     try {
       // Server-side: Chrome headless renders /print with native fonts → perfect fidelity
       const res = await fetch("/api/export-pdf");
       if (!res.ok) {
-        const { error } = await res.json();
-        alert("Export failed: " + error);
+        const result = await res.json();
+        const sections = Array.isArray(result.overflowingSections)
+          ? ` (${result.overflowingSections.join(", ")})`
+          : "";
+        setExportError(`Export failed: ${result.error}${sections}`);
         return;
       }
       const blob = await res.blob();
@@ -1123,6 +1128,12 @@ function PreviewTab({ data }: { data: BulletinData }) {
         </button>
       </div>
 
+      {exportError && (
+        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-700">
+          {exportError}
+        </p>
+      )}
+
       {/* Scaled bulletin */}
       <div
         className="overflow-x-auto rounded-2xl border border-stone-200 shadow-sm"
@@ -1130,6 +1141,7 @@ function PreviewTab({ data }: { data: BulletinData }) {
       >
         <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left", width: PAGE_W }}>
           <BulletinPreview data={data} />
+          <BulletinFitController fitKey={JSON.stringify(data)} />
         </div>
       </div>
     </div>
