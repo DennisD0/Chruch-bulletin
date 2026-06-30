@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type { BulletinData, CalendarBanner } from "@/lib/bulletin-types";
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
@@ -158,80 +159,69 @@ function CalGrid({ month, year, events, banners }: {
     return current >= bVal(banner.startDate) && current <= bVal(banner.endDate);
   };
 
-  // Each day cell ≈ (32% of 1280 − 13px padding − 6px total gap) / 7
-  const CW = 59.7;
-
   return (
-    <div>
-      {/* Day-of-week header */}
-      <div style={{ display:"grid", gridTemplateColumns:`repeat(7,${CW}px)`, gap:1, marginBottom:1 }}>
-        {DOW.map((d,i) => (
-          <div key={d} style={{
-            textAlign:"center", fontWeight:700, fontSize:9,
-            color: i===0 ? SUN : i===6 ? SAT : B,
-            paddingBottom:2, lineHeight:1,
-          }}>{d}</div>
-        ))}
-      </div>
-
-      {/* Week rows */}
-      {weeks.map((week) => {
+    <div style={{ display:"grid", gridTemplateColumns:"repeat(7, 1fr)" }}>
+      {DOW.map((d,i) => (
+        <div key={d} style={{
+          gridRow:1, textAlign:"center", fontWeight:700, fontSize:9,
+          color: i===6 ? SAT : B,
+          padding:"3px 0", lineHeight:1,
+          borderTop:`${RULE}px solid ${BL}`,
+          borderBottom:`${RULE}px solid ${BL}`,
+          borderLeft: i===0 ? `${RULE}px solid ${BL}` : "none",
+          borderRight:`${RULE}px solid ${BL}`,
+        }}>{d}</div>
+      ))}
+      {weeks.map((week, wi) => {
+        const gridRow = wi + 2;
         const activeBanners = banners.filter((banner) =>
           week.some((cell) => cell.month * 100 + cell.day === bVal(banner.startDate))
         );
         return (
-          <div key={`${week[0].month}-${week[0].day}`} style={{ marginBottom:1 }}>
-
-            {/* Banner strips */}
-            {/* Day cells */}
-            <div style={{ display:"grid", gridTemplateColumns:`repeat(7,${CW}px)`, gap:1 }}>
-              {week.map((cell,di) => {
-                const key = `${cell.month}/${cell.day}`;
-                const evts = events[key] ?? [];
-                return (
-                  <div key={di} style={{
-                    height:93, border:`${RULE}px solid ${BL}`,
-                    background:"#fff",
-                    padding:"1px 2px", overflow:"hidden",
-                  }}>
-                    <div style={{
-                      fontWeight:700, fontSize:11, lineHeight:1.2,
-                      color: "#222",
-                    }}>{cell.day === 1 ? `${cell.month}/1` : cell.day}</div>
-                    {evts.map((e,ei) => (
-                      <div key={ei} style={{ fontSize:10, color:GR, lineHeight:1.2 }}>•{e}</div>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-
-            {activeBanners.map((banner, bi) => {
-              let startColumn = week.findIndex((cell) => inBanner(banner, cell));
-              let count = week.filter((cell) => inBanner(banner, cell)).length;
-              if (count === 1 && banner.label.length > 12 && startColumn > 0) {
-                startColumn -= 1;
-                count = 2;
-              }
+          <Fragment key={`${week[0].month}-${week[0].day}`}>
+            {week.map((cell, di) => {
+              const key = `${cell.month}/${cell.day}`;
+              const evts = events[key] ?? [];
               return (
-                <div key={bi} style={{ position:"relative", height:17 }}>
-                  <div style={{
-                    position:"absolute",
-                    left:startColumn * (CW + 1),
-                    width:count * (CW + 1) - 1,
-                    height:16,
-                    border:`${RULE}px solid ${BL}`,
-                    display:"flex", alignItems:"center", justifyContent:"center",
-                    overflow:"hidden",
-                  }}>
-                    <span style={{ fontSize:11, color:BL, whiteSpace:"nowrap" }}>
-                      {banner.label}
-                    </span>
+                <div key={di} style={{
+                  gridRow, gridColumn: di + 1,
+                  height:93, background:"#fff",
+                  padding:"1px 2px", overflow:"hidden",
+                  borderBottom:`${RULE}px solid ${BL}`,
+                  borderLeft: di===0 ? `${RULE}px solid ${BL}` : "none",
+                  borderRight:`${RULE}px solid ${BL}`,
+                }}>
+                  <div style={{ fontWeight:700, fontSize:11, lineHeight:1.2, color:"#222" }}>
+                    {cell.day === 1 ? `${cell.month}/1` : cell.day}
                   </div>
+                  {evts.map((e,ei) => (
+                    <div key={ei} style={{ fontSize:10, color:GR, lineHeight:1.2 }}>•{e}</div>
+                  ))}
                 </div>
               );
             })}
-          </div>
+            {activeBanners.map((banner, bi) => {
+              let startCol = week.findIndex((cell) => inBanner(banner, cell));
+              let count = week.filter((cell) => inBanner(banner, cell)).length;
+              if (count === 1 && banner.label.length > 12 && startCol > 0) {
+                startCol -= 1; count = 2;
+              }
+              return (
+                <div key={bi} style={{
+                  gridRow, gridColumn: `${startCol + 1} / span ${count}`,
+                  alignSelf:"end", zIndex:1,
+                  height:16, overflow:"hidden",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  background:"#D6E8F7",
+                  border:`${RULE}px solid ${BL}`,
+                }}>
+                  <span style={{ fontSize:11, color:BL, fontWeight:700, whiteSpace:"nowrap" }}>
+                    {banner.label}
+                  </span>
+                </div>
+              );
+            })}
+          </Fragment>
         );
       })}
     </div>
@@ -546,7 +536,7 @@ export default function BulletinPreview({ data }: { data: BulletinData }) {
           <img
             src="/logo-full.png"
             alt="Jesus Baptist U.S.A. Conference — New York Church"
-            style={{ position:"absolute", left:96, top:725, width:243, height:55, objectFit:"fill" }}
+            style={{ position:"absolute", left:80, top:726, width:290, height:47, objectFit:"fill" }}
           />
         </div>
       </div>
@@ -657,12 +647,6 @@ export default function BulletinPreview({ data }: { data: BulletinData }) {
                 <col style={{ width: "20%" }} /><col style={{ width: "17%" }} /><col style={{ width: "13%" }} />
                 <col style={{ width: "20%" }} /><col style={{ width: "17%" }} /><col style={{ width: "13%" }} />
               </colgroup>
-              <thead>
-                <tr>
-                  <TH grid center>Who</TH><TH grid center>Whom</TH><TH grid center>Relation</TH>
-                  <TH grid center>Who</TH><TH grid center>Whom</TH><TH grid center>Relation</TH>
-                </tr>
-              </thead>
               <tbody>
                 {Array.from({ length: Math.max(10, Math.ceil(data.prayerRequests.length/2)) }, (_,i) => {
                   const L = data.prayerRequests[i*2];
