@@ -551,6 +551,127 @@ function MemoryVersesTab({
   );
 }
 
+const DOW_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"] as const;
+
+function RecurringEventsSidebarPanel({
+  data,
+  set,
+}: {
+  data: BulletinData;
+  set: (patch: Partial<BulletinData>) => void;
+}) {
+  const [dow, setDow] = useState(0);
+  const [label, setLabel] = useState("");
+
+  const recurring = data.weeklyRecurring ?? [];
+
+  const addEntry = () => {
+    if (!label.trim()) return;
+    set({ weeklyRecurring: [...recurring, { dayOfWeek: dow, label: label.trim() }] });
+    setLabel("");
+  };
+
+  return (
+    <div style={{
+      margin: "0 10px 4px",
+      background: "#F8FAFC",
+      border: "1px solid #E2E8F0",
+      borderRadius: 10,
+      padding: "10px 12px",
+      fontSize: 12,
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+        Weekly Recurring
+      </div>
+
+      {DOW_LABELS.map((dayLabel, dowIdx) => {
+        const items = recurring.filter(r => r.dayOfWeek === dowIdx);
+        if (items.length === 0) return null;
+        return (
+          <div key={dowIdx} style={{ marginBottom: 5 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#64748B" }}>{dayLabel}: </span>
+            {items.map((item) => {
+              const globalIdx = recurring.indexOf(item);
+              return (
+                <span key={globalIdx} style={{
+                  display: "inline-flex", alignItems: "center", gap: 2,
+                  background: "#EEF3FB", border: "1px solid #BFDBFE",
+                  borderRadius: 99, padding: "1px 6px",
+                  fontSize: 10.5, color: "#1E3A8A", marginRight: 3, marginBottom: 2,
+                }}>
+                  {item.label}
+                  <button
+                    onClick={() => set({ weeklyRecurring: recurring.filter((_, i) => i !== globalIdx) })}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#93C5FD", padding: 0, lineHeight: 1, fontSize: 12 }}
+                  >×</button>
+                </span>
+              );
+            })}
+          </div>
+        );
+      })}
+
+      <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
+        <select
+          value={dow}
+          onChange={(e) => setDow(Number(e.target.value))}
+          style={{ borderRadius: 6, border: "1px solid #E2E8F0", background: "#fff", padding: "3px 4px", fontSize: 11, color: "#334155" }}
+        >
+          {DOW_LABELS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+        </select>
+        <input
+          placeholder="Event label"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addEntry()}
+          style={{ flex: 1, minWidth: 0, borderRadius: 6, border: "1px solid #E2E8F0", background: "#fff", padding: "3px 6px", fontSize: 11, color: "#334155" }}
+        />
+        <button
+          onClick={addEntry}
+          style={{ borderRadius: 6, background: "#1E3A8A", color: "#fff", border: "none", padding: "3px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+        >+</button>
+      </div>
+    </div>
+  );
+}
+
+function RecurringEventAdder({ onAdd }: { onAdd: (entry: { dayOfWeek: number; label: string }) => void }) {
+  const [dow, setDow] = useState(0);
+  const [label, setLabel] = useState("");
+  const DOW_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  return (
+    <div className="flex gap-2 items-center">
+      <select
+        value={dow}
+        onChange={(e) => setDow(Number(e.target.value))}
+        className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+      >
+        {DOW_LABELS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+      </select>
+      <input
+        placeholder="Event label"
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && label.trim()) {
+            onAdd({ dayOfWeek: dow, label: label.trim() });
+            setLabel("");
+          }
+        }}
+        className="flex-1 rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+      />
+      <button
+        onClick={() => {
+          if (!label.trim()) return;
+          onAdd({ dayOfWeek: dow, label: label.trim() });
+          setLabel("");
+        }}
+        className="rounded-xl bg-blue-900 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800"
+      >Add</button>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Tab: Monthly Calendar
 // ---------------------------------------------------------------------------
@@ -599,6 +720,40 @@ function CalendarTab({
           value={data.calendarMonth}
           onChange={(v) => set({ calendarMonth: v })}
         />
+      </Card>
+
+      <Card>
+        <SectionTitle>Weekly recurring events</SectionTitle>
+        <p className="text-[11px] text-stone-400 -mt-2">
+          These appear automatically on every matching weekday in the calendar — no manual entry needed.
+        </p>
+        {(["Sun","Mon","Tue","Wed","Thu","Fri","Sat"] as const).map((dow, dowIdx) => {
+          const items = (data.weeklyRecurring ?? []).filter(r => r.dayOfWeek === dowIdx);
+          if (items.length === 0) return null;
+          return (
+            <div key={dow} className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-stone-400">{dow}</span>
+              <div className="flex flex-wrap gap-1.5">
+                {items.map((item, itemIdx) => {
+                  const globalIdx = (data.weeklyRecurring ?? []).indexOf(item);
+                  return (
+                    <span key={itemIdx} className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-100 px-2 py-0.5 text-xs text-blue-800">
+                      {item.label}
+                      <button
+                        onClick={() => set({ weeklyRecurring: (data.weeklyRecurring ?? []).filter((_, i) => i !== globalIdx) })}
+                        className="text-blue-300 hover:text-red-400 leading-none"
+                      >×</button>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+        <div className="border-t border-stone-100 pt-3 flex flex-col gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Add recurring event</span>
+          <RecurringEventAdder onAdd={(entry) => set({ weeklyRecurring: [...(data.weeklyRecurring ?? []), entry] })} />
+        </div>
       </Card>
 
       <Card>
@@ -1958,13 +2113,17 @@ export default function Home() {
             Page 2
           </div>
           {SECTIONS.filter((sec) => sec.page === 2).map((sec) => (
-            <NavItem
-              key={sec.id}
-              icon={sec.icon}
-              label={sec.label}
-              isActive={activeTab === sec.id}
-              onClick={() => handleSectionClick(sec.id)}
-            />
+            <div key={sec.id}>
+              <NavItem
+                icon={sec.icon}
+                label={sec.label}
+                isActive={activeTab === sec.id}
+                onClick={() => handleSectionClick(sec.id)}
+              />
+              {sec.id === "calendar" && activeTab === "calendar" && data && (
+                <RecurringEventsSidebarPanel data={data} set={patch} />
+              )}
+            </div>
           ))}
 
           {/* Divider */}

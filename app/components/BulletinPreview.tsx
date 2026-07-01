@@ -126,10 +126,11 @@ function VerseRow({ label, date, reference, theme }: {
 
 // ── Monthly calendar grid ──────────────────────────────────────────────────────
 
-function CalGrid({ month, year, events, banners, onUpdate }: {
+function CalGrid({ month, year, events, banners, weeklyRecurring = [], onUpdate }: {
   month: number; year: number;
   events: Record<string, string[]>;
   banners: CalendarBanner[];
+  weeklyRecurring?: { dayOfWeek: number; label: string }[];
   onUpdate?: (patch: { calendarEvents?: Record<string,string[]>; calendarBanners?: CalendarBanner[] }) => void;
 }) {
   const [focusKey, setFocusKey] = useState<string | null>(null);
@@ -206,8 +207,14 @@ function CalGrid({ month, year, events, banners, onUpdate }: {
             {week.map((cell, di) => {
               const key = `${cell.month}/${cell.day}`;
               const evts = events[key] ?? [];
+              const evtSet = new Set(evts.map(e => e.trim().toLowerCase()));
+              const recurring = cell.outside ? [] : weeklyRecurring
+                .filter(r => r.dayOfWeek === di)
+                .map(r => r.label)
+                .filter(label => !evtSet.has(label.trim().toLowerCase()));
+              const totalCount = evts.length + recurring.length;
               // shrink font as events accumulate: 10px for ≤3, down to 7px minimum
-              const evtFs = Math.max(7, calendarFontSize - Math.max(0, evts.length - 3) * 0.5);
+              const evtFs = Math.max(7, calendarFontSize - Math.max(0, totalCount - 3) * 0.5);
               return (
                 <div key={di}
                   onClick={(e) => {
@@ -254,6 +261,15 @@ function CalGrid({ month, year, events, banners, onUpdate }: {
                       />
                     );
                   })}
+                  {recurring.map((label, ri) => (
+                    <div key={`r-${ri}`} style={{
+                      fontSize: evtFs,
+                      color: GR,
+                      lineHeight: 1.18,
+                      overflowWrap: "break-word",
+                      wordBreak: "normal",
+                    }}>•{label}</div>
+                  ))}
                 </div>
               );
             })}
@@ -814,7 +830,7 @@ export default function BulletinPreview({
           <div data-fit-section="monthly-calendar" style={{ height:560, overflow:"hidden" }}>
             <SecHead title={`Monthly Schedule ${data.calendarMonth}`} />
             <div data-fit-body>
-              <CalGrid month={mm} year={yyyy} events={data.calendarEvents} banners={data.calendarBanners} onUpdate={onUpdate} />
+              <CalGrid month={mm} year={yyyy} events={data.calendarEvents} banners={data.calendarBanners} weeklyRecurring={data.weeklyRecurring ?? []} onUpdate={onUpdate} />
             </div>
           </div>
 

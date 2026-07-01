@@ -239,6 +239,13 @@
       "YA'"
     ]
   },
+  "weeklyRecurring": [
+    { "dayOfWeek": 0, "label": "Sermon" },
+    { "dayOfWeek": 3, "label": "Wed sermon" },
+    { "dayOfWeek": 4, "label": "Teachers'" },
+    { "dayOfWeek": 6, "label": "Translators'" },
+    { "dayOfWeek": 6, "label": "YA'" }
+  ],
   "calendarBanners": [
     {
       "label": "EC Youth Camp",

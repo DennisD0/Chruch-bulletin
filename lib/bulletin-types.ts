@@ -39,6 +39,11 @@ export interface CalendarBanner {
   endDate: string;
 }
 
+export interface WeeklyRecurringEvent {
+  dayOfWeek: number; // 0 = Sun, 1 = Mon, ..., 6 = Sat
+  label: string;
+}
+
 export interface WeekScheduleItem {
   name: string;
   location: string;
@@ -91,6 +96,7 @@ export interface BulletinData {
   calendarMonth: string;
   calendarEvents: Record<string, string[]>;
   calendarBanners: CalendarBanner[];
+  weeklyRecurring: WeeklyRecurringEvent[];
 
   weekSchedule: WeekScheduleDay[];
 
