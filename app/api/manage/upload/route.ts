@@ -5,23 +5,26 @@ import { join } from "path";
 export const maxDuration = 60;
 
 // ── Korean Bible abbreviation → English name ──────────────────
+// Short forms, matching the convention already used throughout the existing
+// year_reading_plan.json data (e.g. "Gen", "1 Sam", "Isa") — only "Ps" is
+// expanded to "Psalms" at display time (see auto-populate/route.ts's fmt()).
 const KR_BOOK: Record<string, string> = {
-  창:"Genesis", 출:"Exodus", 레:"Leviticus", 민:"Numbers", 신:"Deuteronomy",
-  수:"Joshua", 삿:"Judges", 룻:"Ruth", 삼상:"1 Samuel", 삼하:"2 Samuel",
-  왕상:"1 Kings", 왕하:"2 Kings", 대상:"1 Chronicles", 대하:"2 Chronicles",
-  스:"Ezra", 느:"Nehemiah", 에:"Esther", 욥:"Job", 시:"Psalms",
-  잠:"Proverbs", 전:"Ecclesiastes", 아:"Song of Solomon",
-  사:"Isaiah", 렘:"Jeremiah", 애:"Lamentations", 겔:"Ezekiel",
-  단:"Daniel", 호:"Hosea", 욜:"Joel", 암:"Amos", 옵:"Obadiah",
-  욘:"Jonah", 미:"Micah", 나:"Nahum", 합:"Habakkuk", 습:"Zephaniah",
-  학:"Haggai", 슥:"Zechariah", 말:"Malachi",
-  마:"Matthew", 막:"Mark", 눅:"Luke", 요:"John", 행:"Acts",
-  롬:"Romans", 고전:"1 Corinthians", 고후:"2 Corinthians",
-  갈:"Galatians", 엡:"Ephesians", 빌:"Philippians", 골:"Colossians",
-  살전:"1 Thessalonians", 살후:"2 Thessalonians",
-  딤전:"1 Timothy", 딤후:"2 Timothy", 딛:"Titus", 몬:"Philemon",
-  히:"Hebrews", 약:"James", 벧전:"1 Peter", 벧후:"2 Peter",
-  요일:"1 John", 요이:"2 John", 요삼:"3 John", 유:"Jude", 계:"Revelation",
+  창:"Gen", 출:"Ex", 레:"Lev", 민:"Num", 신:"Deut",
+  수:"Josh", 삿:"Judg", 룻:"Ruth", 삼상:"1 Sam", 삼하:"2 Sam",
+  왕상:"1 Ki", 왕하:"2 Ki", 대상:"1 Chr", 대하:"2 Chr",
+  스:"Ezra", 느:"Neh", 에:"Esth", 욥:"Job", 시:"Ps",
+  잠:"Prov", 전:"Eccl", 아:"Song",
+  사:"Isa", 렘:"Jer", 애:"Lam", 겔:"Ezek",
+  단:"Dan", 호:"Hos", 욜:"Joel", 암:"Amos", 옵:"Obad",
+  욘:"Jonah", 미:"Mic", 나:"Nah", 합:"Hab", 습:"Zeph",
+  학:"Hag", 슥:"Zech", 말:"Mal",
+  마:"Matt", 막:"Mark", 눅:"Luke", 요:"John", 행:"Acts",
+  롬:"Rom", 고전:"1 Cor", 고후:"2 Cor",
+  갈:"Gal", 엡:"Eph", 빌:"Phil", 골:"Col",
+  살전:"1 Thess", 살후:"2 Thess",
+  딤전:"1 Tim", 딤후:"2 Tim", 딛:"Titus", 몬:"Phlm",
+  히:"Heb", 약:"Jas", 벧전:"1 Pet", 벧후:"2 Pet",
+  요일:"1 John", 요이:"2 John", 요삼:"3 John", 유:"Jude", 계:"Rev",
 };
 
 // ── English book name variants → canonical ──────────────────
@@ -63,15 +66,8 @@ const KR_EVENT: Record<string, string> = {
 const KR_MONTHS = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
 const EN_MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
 
-// ── Expand Korean passage code ──────────────────────────────
-// "창1-3" → "Genesis 1-3"
-// "4-7" → just chapters (appended to previous book if no book prefix)
-function expandKrPassage(code: string, prevBook: string): { passage: string; book: string } {
-  // Strip whitespace / punctuation noise
-  const clean = code.trim().replace(/[：:\.。,]/g, "");
-  if (!clean) return { passage: "", book: prevBook };
-
-  // Try to match: optional Korean abbreviation + chapter range
+// ── Expand a single (non-slash) Korean passage code ──────────
+function expandKrPassageOne(clean: string, prevBook: string): { passage: string; book: string } {
   // Multi-char abbrevs first (삼상, 삼하, 왕상, 왕하, 대상, 대하, 고전, 고후, 살전, 살후, 딤전, 딤후, 벧전, 벧후, 요일, 요이, 요삼)
   const multiMatch = clean.match(/^(삼상|삼하|왕상|왕하|대상|대하|고전|고후|살전|살후|딤전|딤후|벧전|벧후|요일|요이|요삼)(\d.*)$/);
   if (multiMatch) {
@@ -95,6 +91,30 @@ function expandKrPassage(code: string, prevBook: string): { passage: string; boo
   return { passage: clean, book: prevBook };
 }
 
+// ── Expand Korean passage code ──────────────────────────────
+// "창1-3" → "Gen 1-3"
+// "4-7" → just chapters (appended to previous book if no book prefix)
+// "딛1-3/몬1" → "Titus 1-3 / Phlm 1" (short combined-book days near year-end)
+function expandKrPassage(code: string, prevBook: string): { passage: string; book: string } {
+  // Strip whitespace / punctuation noise, but keep a comma directly between
+  // digits (e.g. "2,3" meaning chapters 2 and 3) rather than collapsing it.
+  const clean = code.trim().replace(/[：:.。,](?!\d)/g, "");
+  if (!clean) return { passage: "", book: prevBook };
+
+  if (clean.includes("/")) {
+    let book = prevBook;
+    const passages: string[] = [];
+    for (const part of clean.split("/")) {
+      const r = expandKrPassageOne(part, book);
+      passages.push(r.passage);
+      book = r.book;
+    }
+    return { passage: passages.join(" / "), book };
+  }
+
+  return expandKrPassageOne(clean, prevBook);
+}
+
 // ── Parse Korean columnar reading plan ─────────────────────
 // The OCR produces lines in column-major order: all rows of col1, then col2, etc.
 // Each "column" = one month. Rows = 일/성경/확인 header then 31 entries.
@@ -107,43 +127,72 @@ function parseKoreanReadingPlan(lines: string[], year: number): Record<string, s
   const skip = new Set(["일","성경","확인","","check","date","reading"]);
   const dataLines = lines.map(l => l.trim()).filter(l => !skip.has(l.toLowerCase()));
 
-  // Find month markers and split into 12 columns
+  // Find month markers. They cluster into "runs" — one run per physical page,
+  // e.g. [1월..6월] then [7월..12월] — because the OCR emits all of a page's
+  // month headers up front, followed by ALL of that page's day-rows in
+  // row-major order (day 1 for every column, then day 2 for every column...).
+  // A single contiguous per-month slice (the old approach) is the wrong shape
+  // for this layout and silently drops/misattributes data at month boundaries.
   const monthIndices: number[] = [];
   dataLines.forEach((l, i) => {
     if (KR_MONTHS.includes(l)) monthIndices.push(i);
   });
 
-  // If no Korean month markers, try numeric pattern
-  // We'll fall through to a flat sequential parse
+  const runs: number[][] = [];
+  for (const idx of monthIndices) {
+    const lastRun = runs[runs.length - 1];
+    if (lastRun && idx === lastRun[lastRun.length - 1] + 1) lastRun.push(idx);
+    else runs.push([idx]);
+  }
+
   const useColumns = monthIndices.length >= 2;
 
   if (useColumns) {
-    // Extract each month's data block
-    for (let mi = 0; mi < monthIndices.length; mi++) {
-      const month = KR_MONTHS.indexOf(KR_MONTHS[mi]) + 1;
-      const blockStart = monthIndices[mi] + 1;
-      const blockEnd   = mi + 1 < monthIndices.length ? monthIndices[mi + 1] : dataLines.length;
+    for (let ri = 0; ri < runs.length; ri++) {
+      const run = runs[ri];
+      const months = run.map((i) => KR_MONTHS.indexOf(dataLines[i]) + 1);
+      const blockStart = run[run.length - 1] + 1;
+      const blockEnd = ri + 1 < runs.length ? runs[ri + 1][0] : dataLines.length;
       const block = dataLines.slice(blockStart, blockEnd);
 
-      // Block contains: [dayNum, passageCode, dayNum, passageCode, ...] interleaved with checkmarks
-      let prevBook = "";
-      let day = 0;
-      for (let i = 0; i < block.length; i++) {
-        const tok = block[i].trim();
-        if (!tok) continue;
-        // Day number
-        if (/^\d{1,2}$/.test(tok) && Number(tok) >= 1 && Number(tok) <= 31) {
-          day = Number(tok);
-          continue;
-        }
-        // Passage code (has at least one digit)
-        if (day >= 1 && /\d/.test(tok) && day <= daysInMonth[month - 1]) {
-          const { passage, book } = expandKrPassage(tok, prevBook);
-          prevBook = book;
-          const key = `${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+      // Book continuation is tracked per column (per month) so it survives
+      // across month boundaries within the same page/run — the reading plan
+      // continues a book from one month into the next.
+      const prevBook = new Array(months.length).fill("");
+      let day = 1;
+      let pos = 0;
+      const maxDay = Math.max(...months.map((m) => daysInMonth[m - 1]));
+
+      while (day <= maxDay && pos < block.length) {
+        const validCols = months
+          .map((m, idx) => idx)
+          .filter((idx) => day <= daysInMonth[months[idx] - 1]);
+
+        for (const colIdx of validCols) {
+          if (pos >= block.length) break;
+          let tag = block[pos];
+          // Defensive resync: a stray duplicate day-number token (OCR noise
+          // from a skipped short-month column) shows up as two tag-shaped
+          // tokens in a row with no passage between them — drop the extra.
+          while (tag !== String(day) && /^\d{1,2}$/.test(tag) && Number(tag) <= 31) {
+            pos++;
+            tag = block[pos];
+          }
+          pos++;
+          let passageTok = block[pos];
+          if (passageTok === String(day)) {
+            pos++;
+            passageTok = block[pos];
+          }
+          pos++;
+
+          const { passage, book } = expandKrPassage(passageTok ?? "", prevBook[colIdx]);
+          prevBook[colIdx] = book;
+          const month = months[colIdx];
+          const key = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
           result[key] = passage || null;
-          day = 0;
         }
+        day++;
       }
     }
   } else {

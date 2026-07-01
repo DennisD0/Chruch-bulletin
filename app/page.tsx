@@ -2,6 +2,12 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  LayoutDashboard, Church, Users, BookOpen, Quote,
+  CalendarDays, CalendarClock, Newspaper, HandHeart, Sparkles,
+  BookMarked, CalendarRange, Save as SaveIcon,
+  type LucideIcon,
+} from "lucide-react";
 import BulletinPreview, { PAGE_W, PAGE_H } from "@/app/components/BulletinPreview";
 import BulletinFitController from "@/app/components/BulletinFitController";
 import { UploadModal } from "@/app/components/UploadModal";
@@ -1292,16 +1298,16 @@ function AutomationPanel({ onDataRefreshed }: { onDataRefreshed?: () => void }) 
 // ---------------------------------------------------------------------------
 
 const SECTIONS = [
-  { id: "header",    label: "Header",          icon: "📋" },
-  { id: "sermon",   label: "Sermon",           icon: "✝️" },
-  { id: "services", label: "Services",         icon: "👥" },
-  { id: "bible",    label: "Bible Reading",    icon: "📖" },
-  { id: "memory",   label: "Memory Verses",    icon: "💭" },
-  { id: "calendar", label: "Calendar",         icon: "📅" },
-  { id: "schedule", label: "Weekly Schedule",  icon: "🗓️" },
-  { id: "news",     label: "News",             icon: "📰" },
-  { id: "prayer",   label: "Prayer",           icon: "🙏" },
-  { id: "cleaning", label: "Cleaning",         icon: "🧹" },
+  { id: "header",    label: "Header",          icon: LayoutDashboard, page: 1 },
+  { id: "sermon",    label: "Sermon",          icon: Church,          page: 1 },
+  { id: "services",  label: "Services",        icon: Users,           page: 1 },
+  { id: "bible",     label: "Bible Reading",   icon: BookOpen,        page: 1 },
+  { id: "memory",    label: "Memory Verses",   icon: Quote,           page: 1 },
+  { id: "cleaning",  label: "Cleaning",        icon: Sparkles,        page: 1 },
+  { id: "calendar",  label: "Calendar",        icon: CalendarDays,    page: 2 },
+  { id: "schedule",  label: "Weekly Schedule", icon: CalendarClock,   page: 2 },
+  { id: "news",      label: "News",            icon: Newspaper,       page: 2 },
+  { id: "prayer",    label: "Prayer",          icon: HandHeart,       page: 2 },
 ] as const;
 
 type TabId = (typeof SECTIONS)[number]["id"];
@@ -1387,10 +1393,64 @@ function usageColor(percentUsed: number, status?: string) {
   return "#16A34A";
 }
 
-function SidebarSourceProgress({
-  icon, label, detail, percentUsed, status, daysRemaining, onClick,
+// Nav row for the sidebar's section list. The active state's highlight is a
+// single shared-layout element (framer-motion layoutId) that slides smoothly
+// between rows instead of popping instantly when the selection changes.
+function NavItem({
+  icon: Icon, label, isActive, onClick,
 }: {
-  icon: string;
+  icon: LucideIcon;
+  label: string;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        position: "relative", display: "flex", alignItems: "center", gap: 11,
+        width: "100%", padding: "10px 16px 10px 22px",
+        background: isActive ? "transparent" : hovered ? "#F8FAFC" : "transparent",
+        border: "none", cursor: "pointer", textAlign: "left",
+        transition: "background-color 150ms ease-out",
+      }}
+    >
+      {isActive && (
+        <motion.div
+          layoutId="nav-active-highlight"
+          transition={{ type: "spring", stiffness: 500, damping: 40 }}
+          style={{
+            position: "absolute", inset: 0,
+            background: "#EEF3FB", borderLeft: "3px solid #4472C4",
+          }}
+        />
+      )}
+      <Icon
+        size={17} strokeWidth={2} style={{
+          position: "relative", flexShrink: 0,
+          color: isActive ? "#1E3A8A" : "#64748B",
+          transition: "color 150ms ease-out",
+        }}
+      />
+      <span style={{
+        position: "relative", fontSize: 14,
+        fontWeight: isActive ? 700 : 500,
+        color: isActive ? "#1E3A8A" : "#334155",
+        transition: "color 150ms ease-out",
+      }}>
+        {label}
+      </span>
+    </button>
+  );
+}
+
+function SidebarSourceProgress({
+  icon: Icon, label, detail, percentUsed, status, daysRemaining, onClick,
+}: {
+  icon: LucideIcon;
   label: string;
   detail: string;
   percentUsed: number;
@@ -1400,21 +1460,34 @@ function SidebarSourceProgress({
 }) {
   const color = usageColor(percentUsed, status);
   const missing = status === "missing";
+  const [hovered, setHovered] = useState(false);
   return (
-    <button onClick={onClick} style={{
-      display:"block", width:"calc(100% - 20px)", margin:"0 10px 7px", padding:"8px 10px",
-      background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:8,
-      cursor:"pointer", textAlign:"left", color:"#475569",
-    }}>
-      <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-        <span style={{ fontSize:13 }}>{icon}</span>
-        <span style={{ fontSize:12, fontWeight:700, color:"#1E3A8A", flex:1 }}>{label}</span>
-        <span style={{ fontSize:10, fontWeight:800, color }}>{missing ? "Missing" : `${percentUsed}%`}</span>
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display:"block", width:"calc(100% - 20px)", margin:"0 10px 8px", padding:"10px 12px",
+        background:"#F8FAFC", border:`1px solid ${hovered ? "#CBD5E1" : "#E2E8F0"}`, borderRadius:10,
+        cursor:"pointer", textAlign:"left", color:"#475569",
+        transition:"border-color 150ms ease-out, box-shadow 150ms ease-out",
+        boxShadow: hovered ? "0 2px 8px rgba(15,23,42,0.06)" : "none",
+      }}
+    >
+      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+        <Icon size={15} strokeWidth={2} style={{ color:"#64748B", flexShrink:0 }} />
+        <span style={{ fontSize:13, fontWeight:700, color:"#1E3A8A", flex:1 }}>{label}</span>
+        <span style={{ fontSize:10.5, fontWeight:800, color }}>{missing ? "Missing" : `${percentUsed}%`}</span>
       </div>
-      <div style={{ height:5, background:"#E2E8F0", borderRadius:99, overflow:"hidden", margin:"6px 0 4px" }}>
-        <div style={{ height:"100%", width:`${missing ? 100 : Math.min(100, percentUsed)}%`, background:color, borderRadius:99 }} />
+      <div style={{ height:6, background:"#E2E8F0", borderRadius:99, overflow:"hidden", margin:"7px 0 5px" }}>
+        <motion.div
+          initial={false}
+          animate={{ width: `${missing ? 100 : Math.min(100, percentUsed)}%` }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+          style={{ height:"100%", background:color, borderRadius:99 }}
+        />
       </div>
-      <div style={{ display:"flex", justifyContent:"space-between", gap:6, fontSize:9.5, color:"#94A3B8" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", gap:6, fontSize:10.5, color:"#94A3B8" }}>
         <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{detail}</span>
         {!missing && <span style={{ flexShrink:0 }}>{daysRemaining}d left</span>}
       </div>
@@ -1477,9 +1550,10 @@ export default function Home() {
           try {
             const res = await fetch(`/api/auto-populate?date=${encodeURIComponent(bulletin.date)}`);
             if (res.ok) {
-              const { dates, reading1 } = await res.json();
+              const { dates, reading1, reading2 } = await res.json();
               bulletin.bibleReadingDates = dates;
               bulletin.bibleReading1     = reading1;
+              bulletin.bibleReading2     = reading2;
             }
           } catch {}
         }
@@ -1607,6 +1681,7 @@ export default function Home() {
         const result = await res.json();
         nextPatch.bibleReadingDates = result.dates;
         nextPatch.bibleReading1 = result.reading1;
+        nextPatch.bibleReading2 = result.reading2;
         setGenerationNotice(result.complete === false
           ? "Week generated, but some Bible-reading dates are outside the loaded plan."
           : "Bulletin week generated from the available auto-fill data.");
@@ -1645,9 +1720,10 @@ export default function Home() {
       try {
         const res = await fetch(`/api/auto-populate?date=${encodeURIComponent(bulletin.date)}`);
         if (res.ok) {
-          const { dates, reading1 } = await res.json();
+          const { dates, reading1, reading2 } = await res.json();
           bulletin.bibleReadingDates = dates;
           bulletin.bibleReading1     = reading1;
+          bulletin.bibleReading2     = reading2;
         }
       } catch {}
     }
@@ -1728,34 +1804,34 @@ export default function Home() {
 
       {/* ── Figma-style layers sidebar (always visible) ── */}
       <div style={{
-        width: 240, flexShrink: 0, height: "100%",
+        width: 264, flexShrink: 0, height: "100%",
         background: "#fff",
         borderRight: "1px solid #E2E8F0",
         display: "flex", flexDirection: "column",
         overflow: "hidden", zIndex: 30,
       }}>
         {/* Logo header */}
-        <div style={{ flexShrink: 0, height: 52, borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", padding: "0 14px", gap: 10 }}>
+        <div style={{ flexShrink: 0, height: 60, borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", padding: "0 16px", gap: 11 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="" style={{ width: 28, height: 28, objectFit: "contain", flexShrink: 0 }} />
+          <img src="/logo.png" alt="" style={{ width: 32, height: 32, objectFit: "contain", flexShrink: 0 }} />
           <div>
-            <div style={{ fontSize: 12, fontWeight: 900, color: "#1E3A8A", letterSpacing: "-0.01em", whiteSpace: "nowrap" }}>NEW YORK CHURCH</div>
-            <div style={{ fontSize: 10, color: "#94A3B8", whiteSpace: "nowrap" }}>Bulletin Editor</div>
+            <div style={{ fontSize: 13, fontWeight: 900, color: "#1E3A8A", letterSpacing: "-0.01em", whiteSpace: "nowrap" }}>NEW YORK CHURCH</div>
+            <div style={{ fontSize: 11, color: "#94A3B8", whiteSpace: "nowrap" }}>Bulletin Editor</div>
           </div>
         </div>
 
         {/* Layers nav */}
-        <nav style={{ flex: 1, overflowY: "auto", padding: "8px 0", scrollbarWidth: "none" }}>
+        <nav style={{ flex: 1, overflowY: "auto", padding: "10px 0", scrollbarWidth: "none" }}>
 
           {/* Bulletin date generator */}
-          <div style={{ padding:"4px 10px 10px", borderBottom:"1px solid #F1F5F9", marginBottom:5 }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:7 }}>
-              <span style={{ fontSize:10, fontWeight:800, color:"#64748B", textTransform:"uppercase", letterSpacing:"0.08em" }}>
+          <div style={{ padding:"4px 12px 12px", borderBottom:"1px solid #F1F5F9", marginBottom:7 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+              <span style={{ fontSize:10.5, fontWeight:800, color:"#64748B", textTransform:"uppercase", letterSpacing:"0.08em" }}>
                 Bulletin date
               </span>
-              <span style={{ fontSize:10, fontWeight:700, color:"#1E3A8A" }}>{data?.date ?? "—"}</span>
+              <span style={{ fontSize:11, fontWeight:700, color:"#1E3A8A" }}>{data?.date ?? "—"}</span>
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:6 }}>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr", gap:7 }}>
               <input
                 type="month"
                 value={selectedMonth}
@@ -1765,10 +1841,13 @@ export default function Home() {
                   setGenerationNotice("");
                 }}
                 style={{
-                  width:"100%", minWidth:0, padding:"6px 8px", borderRadius:7,
+                  width:"100%", minWidth:0, padding:"8px 9px", borderRadius:8,
                   border:"1px solid #CBD5E1", background:"#fff", color:"#1E3A8A",
-                  fontSize:11, fontWeight:700, outline:"none",
+                  fontSize:12.5, fontWeight:700, outline:"none",
+                  transition:"border-color 150ms ease-out, box-shadow 150ms ease-out",
                 }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "#4472C4"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(68,114,196,0.15)"; }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = "#CBD5E1"; e.currentTarget.style.boxShadow = "none"; }}
               />
               <select
                 value={selectedWeekIndex}
@@ -1778,10 +1857,13 @@ export default function Home() {
                 }}
                 disabled={!bulletinWeeks.length}
                 style={{
-                  width:"100%", minWidth:0, padding:"6px 8px", borderRadius:7,
+                  width:"100%", minWidth:0, padding:"8px 9px", borderRadius:8,
                   border:"1px solid #CBD5E1", background:"#fff", color:"#1E3A8A",
-                  fontSize:11, fontWeight:700, outline:"none",
+                  fontSize:12.5, fontWeight:700, outline:"none",
+                  transition:"border-color 150ms ease-out, box-shadow 150ms ease-out",
                 }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "#4472C4"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(68,114,196,0.15)"; }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = "#CBD5E1"; e.currentTarget.style.boxShadow = "none"; }}
               >
                 {bulletinWeeks.map((week, index) => (
                   <option key={week.startIso} value={index}>{week.label}</option>
@@ -1789,19 +1871,27 @@ export default function Home() {
               </select>
             </div>
 
-            <div style={{ marginTop:7, padding:"7px 8px", borderRadius:7, background:"#F8FAFC", border:"1px solid #E2E8F0" }}>
-              <div style={{ fontSize:9.5, color:"#64748B", lineHeight:1.35 }}>
+            <div style={{ marginTop:8, padding:"8px 9px", borderRadius:8, background:"#F8FAFC", border:"1px solid #E2E8F0" }}>
+              <div style={{ fontSize:10.5, color:"#64748B", lineHeight:1.4 }}>
                 Full auto-fill through{" "}
                 <strong style={{ color:fullAutoFillEnd ? "#1E3A8A" : "#DC2626" }}>
                   {displayCoverageDate(fullAutoFillEnd)}
                 </strong>
               </div>
               {selectedWeek && (
-                <div style={{ display:"flex", gap:5, marginTop:5, flexWrap:"wrap" }}>
-                  <span style={{ fontSize:9, fontWeight:700, color:readingReady ? "#15803D" : "#C2410C" }}>
+                <div style={{ display:"flex", gap:6, marginTop:6, flexWrap:"wrap" }}>
+                  <span style={{
+                    display:"inline-flex", alignItems:"center", gap:4,
+                    fontSize:10, fontWeight:700, color:readingReady ? "#15803D" : "#C2410C",
+                  }}>
+                    <span style={{ width:6, height:6, borderRadius:99, background:readingReady ? "#16A34A" : "#EA580C", flexShrink:0 }} />
                     {readingReady ? "Reading ready" : "Reading partial"}
                   </span>
-                  <span style={{ fontSize:9, fontWeight:700, color:scheduleReady ? "#15803D" : "#C2410C" }}>
+                  <span style={{
+                    display:"inline-flex", alignItems:"center", gap:4,
+                    fontSize:10, fontWeight:700, color:scheduleReady ? "#15803D" : "#C2410C",
+                  }}>
+                    <span style={{ width:6, height:6, borderRadius:99, background:scheduleReady ? "#16A34A" : "#EA580C", flexShrink:0 }} />
                     {scheduleReady ? "Schedule ready" : "Schedule partial"}
                   </span>
                 </div>
@@ -1809,98 +1899,83 @@ export default function Home() {
             </div>
 
             {lowSources.length > 0 && (
-              <div style={{ marginTop:6, padding:"6px 8px", borderRadius:7, background:"#FFF7ED", border:"1px solid #FED7AA" }}>
-                <div style={{ fontSize:9.5, fontWeight:800, color:"#C2410C", marginBottom:2 }}>Data running low</div>
+              <div style={{ marginTop:7, padding:"7px 9px", borderRadius:8, background:"#FFF7ED", border:"1px solid #FED7AA" }}>
+                <div style={{ fontSize:10.5, fontWeight:800, color:"#C2410C", marginBottom:2 }}>Data running low</div>
                 {lowSources.map((message) => (
-                  <div key={message} style={{ fontSize:9, color:"#9A3412", lineHeight:1.35 }}>{message}</div>
+                  <div key={message} style={{ fontSize:10, color:"#9A3412", lineHeight:1.4 }}>{message}</div>
                 ))}
               </div>
             )}
 
-            <button
+            <motion.button
               onClick={handleGenerateWeek}
               disabled={!selectedWeek || generatingWeek}
+              whileHover={selectedWeek && !generatingWeek ? { scale: 1.015 } : undefined}
+              whileTap={selectedWeek && !generatingWeek ? { scale: 0.98 } : undefined}
+              transition={{ duration: 0.15, ease: "easeOut" }}
               style={{
-                width:"100%", marginTop:7, padding:"7px 10px", borderRadius:7,
+                width:"100%", marginTop:8, padding:"9px 10px", borderRadius:8,
                 background:"#1E3A8A", color:"#fff", border:0,
-                fontSize:11, fontWeight:800, cursor:selectedWeek && !generatingWeek ? "pointer" : "not-allowed",
+                fontSize:12.5, fontWeight:800, cursor:selectedWeek && !generatingWeek ? "pointer" : "not-allowed",
                 opacity:selectedWeek && !generatingWeek ? 1 : 0.5,
               }}
             >
               {generatingWeek ? "Generating…" : "Generate selected week"}
-            </button>
-            {generationNotice && (
-              <div style={{ marginTop:5, fontSize:9.5, lineHeight:1.35, color:generationNotice.includes("unavailable") || generationNotice.includes("outside") ? "#C2410C" : "#15803D" }}>
-                {generationNotice}
-              </div>
-            )}
+            </motion.button>
+            <AnimatePresence>
+              {generationNotice && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  style={{ marginTop:6, fontSize:10.5, lineHeight:1.4, color:generationNotice.includes("unavailable") || generationNotice.includes("outside") ? "#C2410C" : "#15803D" }}
+                >
+                  {generationNotice}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* ── Page 1 group ── */}
-          <div style={{ padding: "6px 14px 3px", fontSize: 10, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", display: "flex", alignItems: "center", gap: 5 }}>
+          <div style={{ padding: "8px 16px 4px", fontSize: 10.5, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", display: "flex", alignItems: "center", gap: 6 }}>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
             Page 1
           </div>
-          {([
-            { id: "header",    label: "Header",        icon: "📋" },
-            { id: "sermon",    label: "Sermon",         icon: "✝️" },
-            { id: "services",  label: "Services",       icon: "👥" },
-            { id: "bible",     label: "Bible Reading",  icon: "📖" },
-            { id: "memory",    label: "Memory Verses",  icon: "💭" },
-            { id: "cleaning",  label: "Cleaning",       icon: "🧹" },
-          ] as { id: TabId; label: string; icon: string }[]).map((sec) => {
-            const isActive = activeTab === sec.id;
-            return (
-              <button key={sec.id} onClick={() => handleSectionClick(sec.id)} style={{
-                display: "flex", alignItems: "center", gap: 8,
-                width: "100%", padding: "6px 14px 6px 26px",
-                background: isActive ? "#EEF3FB" : "transparent",
-                border: "none", borderLeft: `3px solid ${isActive ? "#4472C4" : "transparent"}`,
-                cursor: "pointer", color: isActive ? "#1E3A8A" : "#475569",
-                textAlign: "left",
-              }}>
-                <span style={{ fontSize: 13, flexShrink: 0 }}>{sec.icon}</span>
-                <span style={{ fontSize: 13, fontWeight: isActive ? 700 : 400 }}>{sec.label}</span>
-              </button>
-            );
-          })}
+          {SECTIONS.filter((sec) => sec.page === 1).map((sec) => (
+            <NavItem
+              key={sec.id}
+              icon={sec.icon}
+              label={sec.label}
+              isActive={activeTab === sec.id}
+              onClick={() => handleSectionClick(sec.id)}
+            />
+          ))}
 
           {/* ── Page 2 group ── */}
-          <div style={{ padding: "10px 14px 3px", fontSize: 10, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", display: "flex", alignItems: "center", gap: 5 }}>
+          <div style={{ padding: "12px 16px 4px", fontSize: 10.5, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", display: "flex", alignItems: "center", gap: 6 }}>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
             Page 2
           </div>
-          {([
-            { id: "calendar", label: "Calendar",        icon: "📅" },
-            { id: "schedule", label: "Weekly Schedule", icon: "🗓️" },
-            { id: "news",     label: "News",            icon: "📰" },
-            { id: "prayer",   label: "Prayer",          icon: "🙏" },
-          ] as { id: TabId; label: string; icon: string }[]).map((sec) => {
-            const isActive = activeTab === sec.id;
-            return (
-              <button key={sec.id} onClick={() => handleSectionClick(sec.id)} style={{
-                display: "flex", alignItems: "center", gap: 8,
-                width: "100%", padding: "6px 14px 6px 26px",
-                background: isActive ? "#EEF3FB" : "transparent",
-                border: "none", borderLeft: `3px solid ${isActive ? "#4472C4" : "transparent"}`,
-                cursor: "pointer", color: isActive ? "#1E3A8A" : "#475569",
-                textAlign: "left",
-              }}>
-                <span style={{ fontSize: 13, flexShrink: 0 }}>{sec.icon}</span>
-                <span style={{ fontSize: 13, fontWeight: isActive ? 700 : 400 }}>{sec.label}</span>
-              </button>
-            );
-          })}
+          {SECTIONS.filter((sec) => sec.page === 2).map((sec) => (
+            <NavItem
+              key={sec.id}
+              icon={sec.icon}
+              label={sec.label}
+              isActive={activeTab === sec.id}
+              onClick={() => handleSectionClick(sec.id)}
+            />
+          ))}
 
           {/* Divider */}
-          <div style={{ height: 1, background: "#F1F5F9", margin: "10px 0" }} />
+          <div style={{ height: 1, background: "#F1F5F9", margin: "12px 0" }} />
 
           {/* ── Auto-fill group ── */}
-          <div style={{ padding: "0 14px 5px", fontSize: 10, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          <div style={{ padding: "0 16px 6px", fontSize: 10.5, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em" }}>
             Auto-fill
           </div>
           <SidebarSourceProgress
-            icon="📚"
+            icon={BookMarked}
             label="Reading Plan"
             detail={reading?.endDate ? `Through ${displayCoverageDate(reading.endDate)}` : "Upload a reading plan"}
             percentUsed={reading?.percentUsed ?? 100}
@@ -1909,7 +1984,7 @@ export default function Home() {
             onClick={() => setUploadTarget("reading")}
           />
           <SidebarSourceProgress
-            icon="🗓️"
+            icon={CalendarRange}
             label={schedule?.quarter ?? "Schedule"}
             detail={schedule?.endDate ? `Through ${displayCoverageDate(schedule.endDate)}` : "Upload a schedule"}
             percentUsed={schedule?.percentUsed ?? 100}
@@ -1917,23 +1992,26 @@ export default function Home() {
             daysRemaining={schedule?.daysRemaining ?? 0}
             onClick={() => setUploadTarget("schedule")}
           />
-          <div style={{ padding:"0 12px 4px", fontSize:8.5, color:"#94A3B8", lineHeight:1.3 }}>
-            Usage: <span style={{ color:"#16A34A" }}>green</span> → <span style={{ color:"#D6A400" }}>yellow</span> → <span style={{ color:"#EA580C" }}>orange</span> → <span style={{ color:"#DC2626" }}>red</span>
+          <div style={{ padding:"0 13px 6px", fontSize:9.5, color:"#94A3B8", lineHeight:1.4 }}>
+            Usage: <span style={{ color:"#16A34A", fontWeight:700 }}>green</span> → <span style={{ color:"#D6A400", fontWeight:700 }}>yellow</span> → <span style={{ color:"#EA580C", fontWeight:700 }}>orange</span> → <span style={{ color:"#DC2626", fontWeight:700 }}>red</span>
           </div>
         </nav>
 
         {/* Footer: save */}
-        <div style={{ flexShrink: 0, borderTop: "1px solid #F1F5F9", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
-          <button onClick={save} disabled={saving || !data} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "9px 10px", borderRadius: 7, background: "#1E3A8A", color: "#fff", border: "none", cursor: "pointer", opacity: saving || !data ? 0.5 : 1 }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
-              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-              <polyline points="17 21 17 13 7 13 7 21"/>
-              <polyline points="7 3 7 8 15 8"/>
-            </svg>
-            <span style={{ fontSize: 13, fontWeight: 800 }}>
+        <div style={{ flexShrink: 0, borderTop: "1px solid #F1F5F9", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <motion.button
+            onClick={save}
+            disabled={saving || !data}
+            whileHover={!saving && data ? { scale: 1.015 } : undefined}
+            whileTap={!saving && data ? { scale: 0.98 } : undefined}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 9, width: "100%", padding: "11px 10px", borderRadius: 8, background: "#1E3A8A", color: "#fff", border: "none", cursor: "pointer", opacity: saving || !data ? 0.5 : 1 }}
+          >
+            <SaveIcon size={15} strokeWidth={2} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 14, fontWeight: 800 }}>
               {savedMsg || (saving ? "Saving…" : "Save")}
             </span>
-          </button>
+          </motion.button>
         </div>
       </div>
 

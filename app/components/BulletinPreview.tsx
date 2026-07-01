@@ -374,10 +374,18 @@ export default function BulletinPreview({
   onUpdate?: (patch: Partial<BulletinData>) => void;
 }) {
   const [mm, yyyy] = data.calendarMonth.split("/").map(Number);
-  const readingLines = [...data.bibleReading1, ...data.bibleReading2]
-    .flatMap((value) => value.split("\n"));
-  const longestReadingLine = Math.max(1, ...readingLines.map((line) => line.length));
-  const readingFontSize = Math.max(10, Math.min(11, 14.8 - longestReadingLine * 0.24));
+  // Reading 1 is always a single short block split into exactly 2 lines
+  // (book + chapter range) — it never needs to shrink, so its font size
+  // stays fixed.
+  const primaryFontSize = 11;
+  // Reading 2 can carry a much longer single line than Reading 1 (e.g. a
+  // combined-book day like "Titus 1-3 / Phlm 1"), and it must always stay
+  // within 2 lines total — one per block, never wrapped into more — since
+  // the table row height is fixed. Shrink font size further as lines get
+  // longer; cell padding is tightened separately as a second lever.
+  const secondaryLines = data.bibleReading2.flatMap((value) => value.split("\n"));
+  const longestSecondaryLine = Math.max(1, ...secondaryLines.map((line) => line.length));
+  const secondaryFontSize = Math.max(7, Math.min(11, 15.44 - longestSecondaryLine * 0.444));
   const formatPrimaryReading = (value: string) => {
     const clean = value.replace(/\s+/g, " ").trim();
     const splitAt = clean.lastIndexOf(" ");
@@ -385,21 +393,9 @@ export default function BulletinPreview({
       ? `${clean.slice(0, splitAt)}\n${clean.slice(splitAt + 1)}`
       : clean;
   };
-  const formatSecondaryReading = (value: string) => {
-    const sourceLines = value.split("\n").map((line) => line.trim()).filter(Boolean);
-    if (sourceLines.length === 1 && /^(Rev|Gen)\s+/.test(sourceLines[0])) {
-      return sourceLines[0].replace(/\s+/, "\n");
-    }
-    return sourceLines.flatMap((line) => {
-      if (line.length <= 13) return [line];
-      const spaces = [...line.matchAll(/\s+/g)].map((match) => match.index ?? 0);
-      const eligibleSpaces = spaces.filter((index) => index <= 10);
-      const splitAt = eligibleSpaces[eligibleSpaces.length - 1];
-      return splitAt
-        ? [line.slice(0, splitAt), line.slice(splitAt).trim()]
-        : [line];
-    }).join("\n");
-  };
+  // Reading 2 is always already exactly the (up to) two "\n"-joined blocks
+  // computed by the auto-populate route — one line per block, shown as-is.
+  const formatSecondaryReading = (value: string) => value;
 
   const page: React.CSSProperties = {
     ...BASE_STYLE,
@@ -530,13 +526,18 @@ export default function BulletinPreview({
                     </td>
                     {vals.map((v,i) => (
                       <td key={i} style={{
-                        fontSize:readingFontSize, textAlign:"center",
-                        padding:rowIndex === 0 ? "5px 2px 2.2px" : "3px 2px",
-                        whiteSpace:"pre-line",
+                        fontSize:rowIndex === 0 ? primaryFontSize : secondaryFontSize, textAlign:"center",
+                        padding:rowIndex === 0 ? "5px 2px 2.2px" : "3px 1px",
+                        // Reading 2 must never wrap past its two "\n"-joined
+                        // blocks — "pre" keeps each block on its own single
+                        // line (may overflow horizontally on rare long
+                        // combined-book days) rather than wrapping into a
+                        // 3rd/4th row that collides with the section below.
+                        whiteSpace:rowIndex === 0 ? "pre-line" : "pre",
                         overflowWrap:"normal", wordBreak:"normal",
                         borderBottom:rowIndex === 0 ? `${RULE}px solid ${LG}` : undefined,
                         color:GR,
-                        lineHeight:rowIndex === 0 ? 1.4 : 1.2,
+                        lineHeight:rowIndex === 0 ? 1.4 : 1.5,
                         verticalAlign:rowIndex === 0 ? "bottom" : "middle",
                       }}>
                         <E
@@ -779,7 +780,9 @@ export default function BulletinPreview({
             <img
               src="/church.jpg"
               alt="New York Church building"
-              style={{ width:"100%", height:"100%", objectFit:"fill" }}
+              draggable={false}
+              onDragStart={(e) => e.preventDefault()}
+              style={{ width:"100%", height:"100%", objectFit:"fill", WebkitUserDrag:"none" } as React.CSSProperties}
             />
           </div>
 
@@ -796,7 +799,9 @@ export default function BulletinPreview({
           <img
             src="/logo-full.png"
             alt="Jesus Baptist U.S.A. Conference — New York Church"
-            style={{ position:"absolute", left:80, top:726, width:290, height:47, objectFit:"fill" }}
+            draggable={false}
+            onDragStart={(e) => e.preventDefault()}
+            style={{ position:"absolute", left:80, top:726, width:290, height:47, objectFit:"fill", WebkitUserDrag:"none" } as React.CSSProperties}
           />
         </div>
       </div>

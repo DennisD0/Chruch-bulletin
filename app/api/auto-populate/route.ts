@@ -9,6 +9,24 @@ function fmt(raw: string | null): string {
   return raw.replace(/^(\w+) /, (_, a) => (DISPLAY[a] ?? a) + " ");
 }
 
+// "2 Readings" runs at 2x the "1 Reading" pace through the SAME year plan:
+// each day it covers that day's Reading-1 block AND the next one, so it
+// finishes the whole plan around the year's midpoint and wraps back to the
+// start for the remainder of the year. Both blocks are shown as-is, stacked
+// on two lines — never merged into a single combined range.
+function computeReading2(sortedKeys: string[], plan: Record<string, string | null>, dayKey: string): string {
+  const total = sortedKeys.length;
+  const n = sortedKeys.indexOf(dayKey);
+  if (n === -1 || total === 0) return "";
+  const posA = (2 * n) % total;
+  const posB = (2 * n + 1) % total;
+  const a = fmt(plan[sortedKeys[posA]] ?? null);
+  const b = fmt(plan[sortedKeys[posB]] ?? null);
+  if (!a) return b;
+  if (!b) return a;
+  return `${a}\n${b}`;
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const dateStr = searchParams.get("date"); // MM/DD/YYYY
@@ -37,6 +55,7 @@ export async function GET(request: Request) {
 
   const dates: string[] = [];
   const reading1: string[] = [];
+  const reading2: string[] = [];
   const missingDates: string[] = [];
 
   for (let i = 0; i < 7; i++) {
@@ -46,12 +65,14 @@ export async function GET(request: Request) {
     dates.push(`${d.getMonth() + 1}/${d.getDate()}`);
     const reading = plan[key] ?? null;
     reading1.push(fmt(reading));
+    reading2.push(computeReading2(coveredDates, plan, key));
     if (!reading) missingDates.push(key);
   }
 
   return NextResponse.json({
     dates,
     reading1,
+    reading2,
     coverageStart,
     coverageEnd,
     missingDates,

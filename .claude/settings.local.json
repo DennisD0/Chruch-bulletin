@@ -12,5 +12,20 @@
       "Bash(xargs -I{} sh -c 'echo \"== {} ==\"; cat \"{}\"')",
       "Bash(cd \"/c/Users/Gyeonghwan Do/OneDrive/Documents/Choire note reader\" && cat node_modules/next/package.json | grep '\"version\"')"
     ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "key=$(pwd | tr -c 'A-Za-z0-9' '_'); counter_file=\"${TMPDIR:-/tmp}/coderabbit-stop-${key}.count\"; count=$(cat \"$counter_file\" 2>/dev/null || echo 0); if [ \"$count\" -ge 3 ]; then rm -f \"$counter_file\"; exit 0; fi; command -v coderabbit >/dev/null 2>&1 || exit 0; git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0; changes=$(git status --porcelain 2>/dev/null); if [ -z \"$changes\" ]; then rm -f \"$counter_file\"; exit 0; fi; output=$(coderabbit review --agent -t uncommitted 2>&1); if echo \"$output\" | grep -qiE 'critical|warning'; then echo $((count+1)) > \"$counter_file\"; echo \"$output\" >&2; exit 2; else rm -f \"$counter_file\"; exit 0; fi",
+            "timeout": 120,
+            "statusMessage": "Running CodeRabbit review on uncommitted changes..."
+          }
+        ]
+      }
+    ]
   }
 }
