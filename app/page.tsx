@@ -8,6 +8,7 @@ import {
   BookMarked, CalendarRange, Save as SaveIcon,
   MousePointer2, Hand, ZoomIn, Maximize2, Download,
   RefreshCw, ChevronLeft, ChevronRight, LocateFixed,
+  Undo2, Redo2,
   type LucideIcon,
 } from "lucide-react";
 import BulletinPreview, { PAGE_W, PAGE_H } from "@/app/components/BulletinPreview";
@@ -508,7 +509,14 @@ type VersePreview = {
   referenceEn: string;
   text: string;
   translation: string;
+  cached: boolean;
   hasApiKey: boolean;
+  themeNumber: number;
+  totalThemes: number;
+  themeProgress: number;
+  themeTotal: number;
+  cachedCount: number;
+  overallPct: number;
 };
 
 function MemoryVersesSidebarPanel({
@@ -529,13 +537,13 @@ function MemoryVersesSidebarPanel({
     try {
       const url = index !== undefined
         ? `/api/memory-verse?index=${index}`
-        : "/api/memory-verse";
+        : `/api/memory-verse?date=${encodeURIComponent(data.date)}`;
       const res = await fetch(url);
       if (res.ok) setPreview(await res.json());
     } finally {
       setPreviewLoading(false);
     }
-  }, []);
+  }, [data.date]);
 
   useEffect(() => { loadPreview(); }, [loadPreview]);
 
@@ -578,135 +586,154 @@ function MemoryVersesSidebarPanel({
     setRolling(true);
     setRollMsg(null);
     try {
-      // compute next Sunday after the current "next week" date
-      const nextWeekEntry = data.memoryVerses.find((v) => v.label === "Next week");
-      let nextDate = "";
-      if (nextWeekEntry?.date) {
-        const parts = nextWeekEntry.date.split("/").map(Number);
-        if (parts.length >= 2) {
-          const d = new Date(new Date().getFullYear(), parts[0] - 1, parts[1]);
-          d.setDate(d.getDate() + 7);
-          nextDate = `${d.getMonth() + 1}/${d.getDate()}`;
-        }
-      }
       const res = await fetch("/api/memory-verse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "roll",
-          currentVerses: data.memoryVerses,
-          nextDate,
-        }),
+        body: JSON.stringify({ action: "roll", bulletinDate: data.date }),
       });
       if (res.ok) {
         const json = await res.json();
         set({ memoryVerses: json.memoryVerses });
         await loadPreview(json.newIndex);
-        setRollMsg(`Rolled! Translation: ${json.translation || "—"}`);
+        setRollMsg("Filled!");
       } else {
-        setRollMsg("Roll failed — check console");
+        setRollMsg("Failed — check console");
       }
     } finally {
       setRolling(false);
-      setTimeout(() => setRollMsg(null), 4000);
+      setTimeout(() => setRollMsg(null), 3000);
     }
   };
 
-  const BL = "#1E3A8A";
-
   return (
-    <div style={{ margin: "0 10px 4px", display: "flex", flexDirection: "column", gap: 8 }}>
-      {/* Header row */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 2px" }}>
-        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", color: "#6B7A99", textTransform: "uppercase" }}>
-          Memory Verse Auto-Fill
-        </span>
-        {preview && (
-          <span style={{ fontSize: 10, color: "#6B7A99" }}>
-            #{preview.index + 1}/{preview.total}{" "}
-            <span style={{ color: preview.translation === "NKJV" ? "#4ADE80" : "#FACC15", fontWeight: 700 }}>
-              {preview.translation || (previewLoading ? "…" : "—")}
-            </span>
+    <div style={{ margin: "0 10px 8px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10, padding: "12px 12px 10px", display: "flex", flexDirection: "column", gap: 9 }}>
+
+      {/* ── Stats bar ─────────────────────────────── */}
+      <div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
+          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.07em", color: "#64748B", textTransform: "uppercase" }}>
+            Memory Verse Auto-Fill
           </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            {preview && (
+              <span style={{ fontSize: 10, color: "#94A3B8" }}>
+                {preview.index + 1}/{preview.total}
+              </span>
+            )}
+            <span style={{
+              fontSize: 10, fontWeight: 800, padding: "1px 6px", borderRadius: 99,
+              background: preview?.text ? "#DCFCE7" : preview?.hasApiKey === false ? "#FEF9C3" : "#F1F5F9",
+              color: preview?.text ? "#15803D" : preview?.hasApiKey === false ? "#A16207" : "#64748B",
+            }}>
+              {previewLoading ? "…" : preview?.text ? "NKJV" : preview?.hasApiKey === false ? "No key" : "—"}
+            </span>
+          </div>
+        </div>
+
+        {/* Overall progress bar */}
+        <div style={{ height: 5, background: "#E2E8F0", borderRadius: 99, overflow: "hidden", marginBottom: 5 }}>
+          <motion.div
+            initial={false}
+            animate={{ width: `${preview?.overallPct ?? 0}%` }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            style={{ height: "100%", background: "#4472C4", borderRadius: 99 }}
+          />
+        </div>
+
+        {/* Theme + cache stats */}
+        {preview && (
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#94A3B8" }}>
+            <span>
+              Theme {preview.themeNumber}/{preview.totalThemes} · {preview.theme} ({preview.themeProgress}/{preview.themeTotal})
+            </span>
+            <span style={{ flexShrink: 0, color: preview.cachedCount > 0 ? "#15803D" : "#94A3B8" }}>
+              {preview.cachedCount} cached
+            </span>
+          </div>
         )}
       </div>
 
-      {/* Next verse preview box */}
-      <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: 7, padding: "9px 10px", minHeight: 48, border: "1px solid rgba(255,255,255,0.06)" }}>
+      {/* ── Next verse preview ──────────────────────── */}
+      <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 7, padding: "9px 10px", minHeight: 50 }}>
         {previewLoading ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 7, color: "#6B7A99", fontSize: 11 }}>
-            <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.15)", borderTopColor: "#4472C4", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
-            Fetching…
+          <div style={{ display: "flex", alignItems: "center", gap: 7, color: "#94A3B8", fontSize: 11 }}>
+            <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", border: "2px solid #BFDBFE", borderTopColor: "#4472C4", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+            Fetching NKJV…
           </div>
         ) : preview ? (
           <>
-            <div style={{ fontSize: 10, color: "#4472C4", fontWeight: 700, marginBottom: 3 }}>
-              {preview.theme} — {preview.referenceEn}
+            <div style={{ fontSize: 10.5, color: "#1E3A8A", fontWeight: 700, marginBottom: 3 }}>
+              {preview.themeKorean} · {preview.theme} — {preview.referenceEn}
+              {preview.cached && <span style={{ fontSize: 9, fontWeight: 600, color: "#15803D", marginLeft: 5 }}>●&nbsp;cached</span>}
             </div>
-            <div style={{ fontSize: 11, color: "#B0BAD4", lineHeight: 1.45, fontStyle: "italic" }}>
+            <div style={{ fontSize: 11.5, color: "#1E293B", lineHeight: 1.5, fontStyle: "italic" }}>
               {preview.text
-                ? (preview.text.length > 120 ? preview.text.slice(0, 117) + "…" : preview.text)
-                : <span style={{ color: "#6B7A99" }}>No text yet</span>}
+                ? (preview.text.length > 140 ? preview.text.slice(0, 137) + "…" : preview.text)
+                : <span style={{ color: "#94A3B8", fontStyle: "normal" }}>NKJV text unavailable — add API key to .env.local</span>}
             </div>
           </>
         ) : (
-          <div style={{ color: "#6B7A99", fontSize: 11 }}>—</div>
+          <div style={{ color: "#94A3B8", fontSize: 11 }}>Loading…</div>
         )}
       </div>
 
-      {!preview?.hasApiKey && (
-        <div style={{ fontSize: 9.5, color: "#D6A400", background: "rgba(214,164,0,0.08)", border: "1px solid rgba(214,164,0,0.2)", borderRadius: 5, padding: "4px 8px", lineHeight: 1.45 }}>
-          KJV fallback active. For NKJV: add <code style={{ fontFamily: "monospace", fontSize: 9 }}>BIBLE_API_KEY</code> to .env.local (free at scripture.api.bible).
+      {/* ── API key notice ──────────────────────────── */}
+      {preview && !preview.hasApiKey && preview.cachedCount < (preview.total ?? 233) && (
+        <div style={{ fontSize: 10, color: "#92400E", background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 6, padding: "5px 9px", lineHeight: 1.5 }}>
+          Add <code style={{ fontFamily: "monospace", fontSize: 9, background: "#FDE68A", borderRadius: 3, padding: "0 3px" }}>BIBLE_API_KEY=…</code> to <code style={{ fontFamily: "monospace", fontSize: 9 }}>.env.local</code> for NKJV (free at scripture.api.bible). Texts are cached locally after first fetch.
         </div>
       )}
 
-      {/* Position nav row */}
+      {/* ── Position nav ────────────────────────────── */}
       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
         <button onClick={() => navigate(-1)} disabled={previewLoading}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 5, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#aaa", cursor: "pointer", flexShrink: 0 }}>
-          <ChevronLeft size={13} />
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "#fff", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", flexShrink: 0 }}>
+          <ChevronLeft size={14} />
         </button>
         <button onClick={() => navigate(1)} disabled={previewLoading}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 5, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#aaa", cursor: "pointer", flexShrink: 0 }}>
-          <ChevronRight size={13} />
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "#fff", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", flexShrink: 0 }}>
+          <ChevronRight size={14} />
         </button>
-        <button onClick={detectPosition} disabled={detecting || previewLoading}
-          title="Sync position from current 'Next week' verse in bulletin"
-          style={{ display: "flex", alignItems: "center", gap: 4, height: 26, padding: "0 8px", borderRadius: 5, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#aaa", cursor: "pointer", fontSize: 10.5, fontWeight: 600, flexShrink: 0 }}>
-          <LocateFixed size={11} />
-          Sync
-        </button>
+        <div style={{ flex: 1 }} />
         {rollMsg && (
-          <span style={{ fontSize: 10, color: "#4ADE80", fontWeight: 600, marginLeft: 4, flex: 1, textAlign: "right" }}>{rollMsg}</span>
+          <span style={{ fontSize: 10.5, color: "#15803D", fontWeight: 700 }}>{rollMsg}</span>
         )}
       </div>
 
-      {/* Roll button */}
+      {/* ── Roll button ─────────────────────────────── */}
       <motion.button
         onClick={roll}
         disabled={rolling || previewLoading}
-        whileHover={!rolling ? { scale: 1.02 } : undefined}
+        whileHover={!rolling ? { scale: 1.015 } : undefined}
         whileTap={!rolling ? { scale: 0.97 } : undefined}
         transition={{ duration: 0.13 }}
         style={{
           display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-          padding: "9px 12px", borderRadius: 7,
-          background: rolling ? "rgba(30,58,138,0.5)" : BL,
+          padding: "10px 14px", borderRadius: 8,
+          background: rolling ? "rgba(30,58,138,0.5)" : "#1E3A8A",
           color: "#fff", border: "none", cursor: rolling ? "not-allowed" : "pointer",
-          fontSize: 12, fontWeight: 800,
+          fontSize: 12.5, fontWeight: 800,
         }}
       >
-        <RefreshCw size={13} strokeWidth={2.5} style={{ animation: rolling ? "spin 0.8s linear infinite" : undefined }} />
-        {rolling ? "Rolling…" : "Roll to next week →"}
+        <RefreshCw size={13} strokeWidth={2.5} style={{ animation: rolling ? "spin 0.8s linear infinite" : undefined, flexShrink: 0 }} />
+        {rolling ? "Syncing…" : "Sync Verses"}
       </motion.button>
-      <div style={{ fontSize: 9.5, color: "#3A3A55", lineHeight: 1.45, padding: "0 2px" }}>
-        Promotes Last←This←Next and fills Next week with verse #{(preview?.index ?? 0) + 1}
+      <div style={{ fontSize: 9.5, color: "#94A3B8", lineHeight: 1.45 }}>
+        Auto-fills Last / This / Next week from the bulletin's date field.
       </div>
     </div>
   );
 }
 
 const DOW_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"] as const;
+
+const BANNER_TYPES = [
+  { value: "retreat",    label: "Retreat",    color: "#4472C4", bg: "#D6E8F7" },
+  { value: "seminar",    label: "Seminar",    color: "#7C3AED", bg: "#EDE9FE" },
+  { value: "camp",       label: "Camp",       color: "#16A34A", bg: "#DCFCE7" },
+  { value: "conference", label: "Conference", color: "#D97706", bg: "#FEF3C7" },
+  { value: "other",      label: "Other",      color: "#64748B", bg: "#F1F5F9" },
+] as const;
 
 function RecurringEventsSidebarPanel({
   data,
@@ -785,6 +812,59 @@ function RecurringEventsSidebarPanel({
           onClick={addEntry}
           style={{ borderRadius: 6, background: "#1E3A8A", color: "#fff", border: "none", padding: "3px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
         >+</button>
+      </div>
+
+      {/* ── Spanning events (banners) ──────────────────── */}
+      <div style={{ borderTop: "1px solid #E2E8F0", marginTop: 12, paddingTop: 10 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+          Spanning Events
+        </div>
+        <div style={{ fontSize: 10, color: "#94A3B8", marginBottom: 8, lineHeight: 1.4 }}>
+          Multi-day events shown as colored bars in the calendar.
+        </div>
+
+        {(data.calendarBanners ?? []).map((banner, i) => {
+          return (
+            <div key={i} style={{
+              marginBottom: 8, borderRadius: 8, border: `1px solid #E2E8F0`,
+              borderLeftWidth: 3, borderLeftColor: "#4472C4",
+              padding: "8px 10px", background: "#fff",
+            }}>
+              {/* Label + dates */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px auto", gap: 4, alignItems: "center" }}>
+                <input
+                  placeholder="Event name"
+                  value={banner.label}
+                  onChange={(e) => set({ calendarBanners: (data.calendarBanners ?? []).map((b, j) => j === i ? { ...b, label: e.target.value } : b) })}
+                  style={{ borderRadius: 5, border: "1px solid #E2E8F0", padding: "3px 6px", fontSize: 11, color: "#334155", minWidth: 0 }}
+                />
+                <input
+                  placeholder="Start"
+                  title="Start date (M/D)"
+                  value={banner.startDate}
+                  onChange={(e) => set({ calendarBanners: (data.calendarBanners ?? []).map((b, j) => j === i ? { ...b, startDate: e.target.value } : b) })}
+                  style={{ borderRadius: 5, border: "1px solid #E2E8F0", padding: "3px 6px", fontSize: 11, color: "#334155", textAlign: "center" }}
+                />
+                <input
+                  placeholder="End"
+                  title="End date (M/D)"
+                  value={banner.endDate}
+                  onChange={(e) => set({ calendarBanners: (data.calendarBanners ?? []).map((b, j) => j === i ? { ...b, endDate: e.target.value } : b) })}
+                  style={{ borderRadius: 5, border: "1px solid #E2E8F0", padding: "3px 6px", fontSize: 11, color: "#334155", textAlign: "center" }}
+                />
+                <button
+                  onClick={() => set({ calendarBanners: (data.calendarBanners ?? []).filter((_, j) => j !== i) })}
+                  style={{ borderRadius: 5, background: "none", border: "1px solid #E2E8F0", color: "#94A3B8", cursor: "pointer", padding: "3px 6px", fontSize: 12, fontWeight: 700, lineHeight: 1 }}
+                >×</button>
+              </div>
+            </div>
+          );
+        })}
+
+        <button
+          onClick={() => set({ calendarBanners: [...(data.calendarBanners ?? []), { label: "", startDate: "", endDate: "", type: "retreat" }] })}
+          style={{ width: "100%", borderRadius: 7, border: "1.5px dashed #BFDBFE", background: "#F0F7FF", color: "#4472C4", fontSize: 11, fontWeight: 700, padding: "5px 0", cursor: "pointer" }}
+        >+ Add spanning event</button>
       </div>
     </div>
   );
@@ -978,45 +1058,78 @@ function CalendarTab({
 
       <Card>
         <SectionTitle>Spanning events (banners)</SectionTitle>
-        {data.calendarBanners.map((banner, i) => (
-          <div
-            key={i}
-            className="flex gap-2 items-start rounded-xl border border-stone-100 p-3"
-          >
-            <div className="flex-1 grid grid-cols-3 gap-3">
-              <Field
-                label="Label"
-                value={banner.label}
-                onChange={(v) => updateBanner(i, { label: v })}
-              />
-              <Field
-                label="Start date"
-                value={banner.startDate}
-                onChange={(v) => updateBanner(i, { startDate: v })}
-              />
-              <Field
-                label="End date"
-                value={banner.endDate}
-                onChange={(v) => updateBanner(i, { endDate: v })}
+        <p className="text-[11px] text-stone-400 -mt-2">
+          Blue boxes that span a date range in the calendar — retreats, seminars, camps, etc.
+        </p>
+        {data.calendarBanners.map((banner, i) => {
+          const activeType = banner.type ?? "retreat";
+          const activePalette = BANNER_TYPES.find(t => t.value === activeType) ?? BANNER_TYPES[0];
+          return (
+            <div
+              key={i}
+              className="flex gap-2 items-start rounded-xl border border-stone-100 p-3"
+              style={{ borderLeftWidth: 3, borderLeftColor: activePalette.color }}
+            >
+              <div className="flex-1 flex flex-col gap-3">
+                {/* Type selector pills */}
+                <div className="flex flex-wrap gap-1.5">
+                  {BANNER_TYPES.map((t) => (
+                    <button
+                      key={t.value}
+                      onClick={() => updateBanner(i, { type: t.value })}
+                      style={{
+                        padding: "2px 9px",
+                        borderRadius: 99,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        border: `1.5px solid ${t.color}`,
+                        background: activeType === t.value ? t.bg : "transparent",
+                        color: t.color,
+                        cursor: "pointer",
+                        opacity: activeType === t.value ? 1 : 0.45,
+                      }}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                {/* Label + dates */}
+                <div className="grid grid-cols-3 gap-3">
+                  <Field
+                    label="Label"
+                    value={banner.label}
+                    onChange={(v) => updateBanner(i, { label: v })}
+                  />
+                  <Field
+                    label="Start (M/D)"
+                    value={banner.startDate}
+                    onChange={(v) => updateBanner(i, { startDate: v })}
+                  />
+                  <Field
+                    label="End (M/D)"
+                    value={banner.endDate}
+                    onChange={(v) => updateBanner(i, { endDate: v })}
+                  />
+                </div>
+              </div>
+              <RemoveBtn
+                onClick={() =>
+                  set({
+                    calendarBanners: data.calendarBanners.filter(
+                      (_, idx) => idx !== i
+                    ),
+                  })
+                }
               />
             </div>
-            <RemoveBtn
-              onClick={() =>
-                set({
-                  calendarBanners: data.calendarBanners.filter(
-                    (_, idx) => idx !== i
-                  ),
-                })
-              }
-            />
-          </div>
-        ))}
+          );
+        })}
         <AddBtn
           onClick={() =>
             set({
               calendarBanners: [
                 ...data.calendarBanners,
-                { label: "", startDate: "", endDate: "" },
+                { label: "", startDate: "", endDate: "", type: "retreat" },
               ],
             })
           }
@@ -1662,6 +1775,7 @@ function ToolbarTooltip({ text, children }: { text: string; children: React.Reac
 
 function FloatingToolbar({
   mode, onMode, onFit, onExport, exporting, disabled,
+  canUndo, canRedo, onUndo, onRedo,
 }: {
   mode: CanvasMode;
   onMode: (m: CanvasMode) => void;
@@ -1669,6 +1783,10 @@ function FloatingToolbar({
   onExport: () => void;
   exporting: boolean;
   disabled?: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
 }) {
   const pillStyle: React.CSSProperties = {
     display: "inline-flex", alignItems: "center",
@@ -1748,6 +1866,33 @@ function FloatingToolbar({
             aria-label="Fit to screen"
           >
             <Maximize2 size={15} strokeWidth={2} style={{ position: "relative", zIndex: 1 }} />
+          </button>
+        </ToolbarTooltip>
+
+        {/* Separator */}
+        <div style={{ width: 1, height: 24, background: "rgba(255,255,255,0.1)", margin: "0 4px", flexShrink: 0 }} />
+
+        {/* Undo */}
+        <ToolbarTooltip text="Undo  Ctrl+Z">
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            style={{ ...btnBase, color: canUndo ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.2)", width: 36, cursor: canUndo ? "pointer" : "not-allowed" }}
+            aria-label="Undo"
+          >
+            <Undo2 size={15} strokeWidth={2} style={{ position: "relative", zIndex: 1 }} />
+          </button>
+        </ToolbarTooltip>
+
+        {/* Redo */}
+        <ToolbarTooltip text="Redo  Ctrl+Y">
+          <button
+            onClick={onRedo}
+            disabled={!canRedo}
+            style={{ ...btnBase, color: canRedo ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.2)", width: 36, cursor: canRedo ? "pointer" : "not-allowed" }}
+            aria-label="Redo"
+          >
+            <Redo2 size={15} strokeWidth={2} style={{ position: "relative", zIndex: 1 }} />
           </button>
         </ToolbarTooltip>
       </div>
@@ -1985,6 +2130,10 @@ function SidebarSourceProgress({
 // ---------------------------------------------------------------------------
 
 export default function Home() {
+  const historyStack = useRef<BulletinData[]>([]);
+  const historyPos   = useRef(-1);
+  const [historyStamp, setHistoryStamp] = useState(0);
+
   const [data, setData]           = useState<BulletinData | null>(null);
   const [activeTab, setActiveTab] = useState<TabId | null>(null);
   const [saving, setSaving]       = useState(false);
@@ -2045,6 +2194,8 @@ export default function Home() {
           } catch {}
         }
         setData(bulletin);
+        historyStack.current = [bulletin];
+        historyPos.current = 0;
         const [calendarMonth, calendarYear] = String(bulletin.calendarMonth ?? "").split("/").map(Number);
         const initialMonth = calendarMonth && calendarYear
           ? `${calendarYear}-${String(calendarMonth).padStart(2, "0")}`
@@ -2131,6 +2282,26 @@ export default function Home() {
         spaceHeld.current = true;
         if (canvasRef.current) canvasRef.current.style.cursor = "grab";
       }
+      // Undo / Redo — only when not in an editable element
+      if (!editing && (e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        if (historyPos.current > 0) {
+          historyPos.current--;
+          setData(historyStack.current[historyPos.current]);
+          setHistoryStamp(s => s + 1);
+        }
+        return;
+      }
+      if (!editing && (e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
+        e.preventDefault();
+        if (historyPos.current < historyStack.current.length - 1) {
+          historyPos.current++;
+          setData(historyStack.current[historyPos.current]);
+          setHistoryStamp(s => s + 1);
+        }
+        return;
+      }
+
       if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         if (e.key === "v" || e.key === "V") setCanvasMode("select");
         if (e.key === "h" || e.key === "H") setCanvasMode("grab");
@@ -2154,8 +2325,34 @@ export default function Home() {
     };
   }, [applyTransform, fitToScreen]);
 
+  const canUndo = historyPos.current > 0;
+  const canRedo = historyPos.current < historyStack.current.length - 1;
+
   const patch = useCallback((p: Partial<BulletinData>) => {
-    setData((prev) => (prev ? { ...prev, ...p } : prev));
+    setData((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...p };
+      historyStack.current = historyStack.current.slice(0, historyPos.current + 1);
+      historyStack.current.push(next);
+      if (historyStack.current.length > 60) historyStack.current = historyStack.current.slice(-60);
+      historyPos.current = historyStack.current.length - 1;
+      return next;
+    });
+    setHistoryStamp(s => s + 1);
+  }, []);
+
+  const undo = useCallback(() => {
+    if (historyPos.current <= 0) return;
+    historyPos.current--;
+    setData(historyStack.current[historyPos.current]);
+    setHistoryStamp(s => s + 1);
+  }, []);
+
+  const redo = useCallback(() => {
+    if (historyPos.current >= historyStack.current.length - 1) return;
+    historyPos.current++;
+    setData(historyStack.current[historyPos.current]);
+    setHistoryStamp(s => s + 1);
   }, []);
 
   const save = async () => {
@@ -2575,8 +2772,8 @@ export default function Home() {
           /* Pan layer — translate only */
           <div ref={pdfPanRef} style={{ position: "absolute", left: 0, top: 0, willChange: "transform" }}>
             {/* Zoom layer — CSS zoom for crisp text re-rasterize */}
-            <div ref={pdfZoomRef} style={{ width: PAGE_W, transformOrigin: "0 0" }}>
-              <BulletinPreview data={data} onUpdate={patch} />
+            <div ref={pdfZoomRef} style={{ width: PAGE_W, transformOrigin: "0 0", pointerEvents: canvasMode === "grab" ? "none" : "auto" }}>
+              <BulletinPreview data={data} onUpdate={canvasMode === "grab" ? undefined : patch} />
               <BulletinFitController fitKey={JSON.stringify(data)} />
             </div>
           </div>
@@ -2586,7 +2783,7 @@ export default function Home() {
           </div>
         )}
 
-        <FloatingToolbar mode={canvasMode} onMode={setCanvasMode} onFit={fitToScreen} onExport={exportPDF} exporting={exporting} disabled={!data} />
+        <FloatingToolbar mode={canvasMode} onMode={setCanvasMode} onFit={fitToScreen} onExport={exportPDF} exporting={exporting} disabled={!data} canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
         {exportError && (
           <div style={{ position: "absolute", bottom: 80, right: 16, fontSize: 11, color: "#F87171", background: "#2A1A1A", border: "1px solid #7F1D1D", borderRadius: 6, padding: "5px 10px", pointerEvents: "all" }}>
             {exportError}

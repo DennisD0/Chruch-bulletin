@@ -2,9 +2,43 @@ import { NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 
-const VERSE_LIST_PATH = join(process.cwd(), "data", "memory_verse_list.json");
-const INDEX_PATH = join(process.cwd(), "data", "memory_verse_index.json");
-const NKJV_BIBLE_ID = "de4e12af7fb5a05d-01";
+const VERSE_LIST_PATH  = join(process.cwd(), "data", "memory_verse_list.json");
+const INDEX_PATH       = join(process.cwd(), "data", "memory_verse_index.json");
+const TEXT_CACHE_PATH  = join(process.cwd(), "data", "memory_verse_texts.json");
+const NKJV_BIBLE_ID    = "de4e12af7fb5a05d-01";
+
+// ── Date-based verse anchor ───────────────────────────────────────────────────
+// July 5, 2026 (Sunday) = verse index 145 (벧전 3:15-16)
+const ANCHOR_SUNDAY_MS = Date.UTC(2026, 6, 5); // month is 0-indexed
+const ANCHOR_INDEX     = 145;
+const MS_PER_WEEK      = 7 * 24 * 60 * 60 * 1000;
+
+function getSundayOf(date: Date): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() - d.getDay()); // rewind to Sunday
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function weekIndexForDate(date: Date, total: number): number {
+  const sunday = getSundayOf(date);
+  const weeksDiff = Math.round((sunday.getTime() - ANCHOR_SUNDAY_MS) / MS_PER_WEEK);
+  return ((ANCHOR_INDEX + weeksDiff) % total + total) % total;
+}
+
+function parseBulletinDate(dateStr: string): Date {
+  // Handles MM/DD/YYYY or M/D/YYYY (bulletin date field format)
+  const parts = dateStr.split("/").map(Number);
+  if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+    return new Date(parts[2], parts[0] - 1, parts[1]);
+  }
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? new Date() : d;
+}
+
+function formatMonthDay(date: Date): string {
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
 
 type VerseEntry = { theme: string; themeKorean: string; reference: string };
 
@@ -46,6 +80,8 @@ const KOR_TO_CODE: Record<string, string> = {
   "요일": "1JN", "요이": "2JN", "요삼": "3JN", "유": "JUD", "계": "REV",
 };
 
+// ── File helpers ──────────────────────────────────────────────────────────────
+
 function getVerseList(): VerseEntry[] {
   return JSON.parse(readFileSync(VERSE_LIST_PATH, "utf8"));
 }
@@ -58,6 +94,20 @@ function getNextWeekIndex(): number {
 function saveNextWeekIndex(idx: number) {
   writeFileSync(INDEX_PATH, JSON.stringify({ nextWeekIndex: idx }, null, 2));
 }
+
+function getTextCache(): Record<string, string> {
+  if (!existsSync(TEXT_CACHE_PATH)) return {};
+  try { return JSON.parse(readFileSync(TEXT_CACHE_PATH, "utf8")); }
+  catch { return {}; }
+}
+
+function saveTextToCache(ref: string, text: string) {
+  const cache = getTextCache();
+  cache[ref] = text;
+  writeFileSync(TEXT_CACHE_PATH, JSON.stringify(cache, null, 2));
+}
+
+// ── Reference conversion ──────────────────────────────────────────────────────
 
 function parseKorRef(ref: string): { kor: string; chap: string; verses?: string } | null {
   const m = ref.trim().match(/^([가-힣]+)\s+(\d+)(?::(\S+))?$/);
@@ -79,9 +129,7 @@ function korToPassageId(ref: string): string | null {
   const code = KOR_TO_CODE[p.kor];
   if (!code) return null;
   if (!p.verses) return `${code}.${p.chap}`;
-  // single verse
   if (/^\d+$/.test(p.verses)) return `${code}.${p.chap}.${p.verses}`;
-  // range "16-17"
   const range = p.verses.match(/^(\d+)-(\d+)$/);
   if (range) return `${code}.${p.chap}.${range[1]}-${code}.${p.chap}.${range[2]}`;
   // comma "9,11" — treat as range (includes middle verse, acceptable)
@@ -94,50 +142,78 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 }
 
-async function fetchVerseText(ref: string): Promise<{ text: string; translation: string }> {
-  const apiKey = process.env.BIBLE_API_KEY;
+// ── NKJV fetch — primary: scripture.api.bible, backup: cached local text ──────
 
+async function fetchVerseText(ref: string): Promise<{ text: string; cached: boolean; apiKey: boolean }> {
+  const apiKey = process.env.BIBLE_API_KEY ?? "";
+  const cache  = getTextCache();
+
+  // 1. Serve from local cache if available (already NKJV from a prior fetch)
+  if (cache[ref]) {
+    return { text: cache[ref], cached: true, apiKey: !!apiKey };
+  }
+
+  // 2. Fetch from scripture.api.bible (NKJV) when API key is configured
   if (apiKey) {
     const passageId = korToPassageId(ref);
     if (passageId) {
       try {
-        const url = `https://api.scripture.api.bible/v1/bibles/${NKJV_BIBLE_ID}/passages/${passageId}?content-type=text&include-notes=false&include-titles=false&include-chapter-numbers=false&include-verse-numbers=false&include-verse-spans=false`;
+        const url = `https://api.scripture.api.bible/v1/bibles/${NKJV_BIBLE_ID}/passages/${passageId}`
+          + `?content-type=text&include-notes=false&include-titles=false`
+          + `&include-chapter-numbers=false&include-verse-numbers=false&include-verse-spans=false`;
         const res = await fetch(url, { headers: { "api-key": apiKey } });
         if (res.ok) {
           const data = await res.json();
           const text = stripHtml(data.data?.content ?? "").replace(/\s+/g, " ").trim();
-          if (text) return { text, translation: "NKJV" };
+          if (text) {
+            saveTextToCache(ref, text);   // persist for offline use
+            return { text, cached: false, apiKey: true };
+          }
         }
       } catch { /* fall through */ }
     }
   }
 
-  // Fallback: bible-api.com (KJV, free, no key needed)
-  try {
-    const englishRef = korToEnglish(ref);
-    const url = `https://bible-api.com/${encodeURIComponent(englishRef)}?translation=kjv`;
-    const res = await fetch(url);
-    if (res.ok) {
-      const data = await res.json();
-      const text = (data.text ?? "").trim().replace(/\n+/g, " ").trim();
-      if (text) return { text, translation: "KJV" };
-    }
-  } catch { /* fall through */ }
-
-  return { text: "", translation: "" };
+  // 3. No text available — NKJV only, no KJV fallback
+  return { text: "", cached: false, apiKey: !!apiKey };
 }
 
-// GET /api/memory-verse?index=N  (peek without changing state)
+// ── Stats helper ─────────────────────────────────────────────────────────────
+
+function buildStats(verses: VerseEntry[], idx: number, cache: Record<string, string>) {
+  const themes = [...new Set(verses.map((v) => v.theme))];
+  const currentTheme = verses[idx].theme;
+  const themeNumber  = themes.indexOf(currentTheme) + 1;
+  const themeStart   = verses.findIndex((v) => v.theme === currentTheme);
+  const themeTotal   = verses.filter((v) => v.theme === currentTheme).length;
+  const themeProgress = idx - themeStart + 1;        // 1-based
+  const cachedCount   = verses.filter((v) => cache[v.reference]).length;
+  const overallPct    = Math.round((idx / verses.length) * 100);
+  return { themeNumber, totalThemes: themes.length, themeProgress, themeTotal, cachedCount, overallPct };
+}
+
+// ── Route handlers ────────────────────────────────────────────────────────────
+
+// GET /api/memory-verse?index=N  OR  ?date=MM/DD/YYYY
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const indexParam = searchParams.get("index");
+  const dateParam  = searchParams.get("date");
 
   const verses = getVerseList();
-  const rawIdx = indexParam !== null ? parseInt(indexParam) : getNextWeekIndex();
-  const idx = ((rawIdx % verses.length) + verses.length) % verses.length;
-  const entry = verses[idx];
+  let idx: number;
+  if (indexParam !== null) {
+    idx = ((parseInt(indexParam) % verses.length) + verses.length) % verses.length;
+  } else if (dateParam) {
+    idx = weekIndexForDate(parseBulletinDate(dateParam), verses.length);
+  } else {
+    idx = weekIndexForDate(new Date(), verses.length);
+  }
+  const entry  = verses[idx];
 
-  const { text, translation } = await fetchVerseText(entry.reference);
+  const { text, cached, apiKey } = await fetchVerseText(entry.reference);
+  const cache = getTextCache();
+  const stats = buildStats(verses, idx, cache);
 
   return NextResponse.json({
     index: idx,
@@ -147,76 +223,72 @@ export async function GET(request: Request) {
     reference: entry.reference,
     referenceEn: korToEnglish(entry.reference),
     text,
-    translation,
-    hasApiKey: !!process.env.BIBLE_API_KEY,
+    translation: (text ? "NKJV" : ""),
+    cached,
+    hasApiKey: apiKey,
+    ...stats,
   });
 }
 
 // POST /api/memory-verse
-// { action: "roll", currentVerses: [...3 MemoryVerse...], nextDate: "7/12" }
-//   → promotes last←this, this←next, fetches new next week from list, advances index
-// { action: "setIndex", index: N }
-//   → manually set the position
-// { action: "detect", referenceEn: "1 Peter 3:15-16" }
-//   → find this reference in the list, set index to the one after it
 export async function POST(request: Request) {
-  const body = await request.json();
+  const body   = await request.json();
   const verses = getVerseList();
 
+  // ── setIndex ──
   if (body.action === "setIndex") {
     const idx = ((parseInt(body.index ?? 0)) % verses.length + verses.length) % verses.length;
     saveNextWeekIndex(idx);
-    const entry = verses[idx];
-    return NextResponse.json({ nextWeekIndex: idx, total: verses.length, entry });
+    const cache = getTextCache();
+    return NextResponse.json({ nextWeekIndex: idx, total: verses.length, entry: verses[idx], ...buildStats(verses, idx, cache) });
   }
 
+  // ── detect: find current "next week" ref in list, set index to what follows it ──
   if (body.action === "detect") {
-    // Find where a given English reference appears in the list
     const needle = (body.referenceEn ?? "").toLowerCase().replace(/\s+/g, " ").trim();
-    const found = verses.findIndex((v) =>
+    const found  = verses.findIndex((v) =>
       korToEnglish(v.reference).toLowerCase().replace(/\s+/g, " ").trim() === needle
     );
-    if (found === -1) {
-      return NextResponse.json({ error: "Not found in verse list" }, { status: 404 });
-    }
+    if (found === -1) return NextResponse.json({ error: "Not found in verse list" }, { status: 404 });
     const newIdx = (found + 1) % verses.length;
     saveNextWeekIndex(newIdx);
-    return NextResponse.json({ nextWeekIndex: newIdx, total: verses.length, foundAt: found });
+    const cache = getTextCache();
+    return NextResponse.json({ nextWeekIndex: newIdx, total: verses.length, foundAt: found, ...buildStats(verses, newIdx, cache) });
   }
 
+  // ── roll: auto-compute last/this/next week from the bulletin date ──
   if (body.action === "roll") {
-    const currentIdx = getNextWeekIndex();
-    const safeIdx = ((currentIdx % verses.length) + verses.length) % verses.length;
-    const nextEntry = verses[safeIdx];
-    const { text, translation } = await fetchVerseText(nextEntry.reference);
+    const bulletinDate = body.bulletinDate
+      ? parseBulletinDate(body.bulletinDate)
+      : new Date();
 
-    const current: { label: string; date: string; reference: string; theme: string; text: string }[] =
-      body.currentVerses ?? [];
+    const thisSunday = getSundayOf(bulletinDate);
+    const lastSunday = new Date(thisSunday.getTime() - MS_PER_WEEK);
+    const nextSunday = new Date(thisSunday.getTime() + MS_PER_WEEK);
 
-    const thisWeek = current.find((v) => v.label === "This week") ?? current[1];
-    const nextWeek = current.find((v) => v.label === "Next week") ?? current[2];
+    const lastIdx = weekIndexForDate(lastSunday, verses.length);
+    const thisIdx = weekIndexForDate(thisSunday, verses.length);
+    const nextIdx = weekIndexForDate(nextSunday, verses.length);
+
+    const [lastFetch, thisFetch, nextFetch] = await Promise.all([
+      fetchVerseText(verses[lastIdx].reference),
+      fetchVerseText(verses[thisIdx].reference),
+      fetchVerseText(verses[nextIdx].reference),
+    ]);
 
     const newVerses = [
-      { ...(thisWeek ?? {}), label: "Last week" },
-      { ...(nextWeek ?? {}), label: "This week" },
-      {
-        label: "Next week",
-        date: body.nextDate ?? "",
-        reference: korToEnglish(nextEntry.reference),
-        theme: nextEntry.theme,
-        text,
-      },
+      { label: "Last week", date: formatMonthDay(lastSunday), reference: korToEnglish(verses[lastIdx].reference), theme: verses[lastIdx].theme, text: lastFetch.text },
+      { label: "This week", date: formatMonthDay(thisSunday), reference: korToEnglish(verses[thisIdx].reference), theme: verses[thisIdx].theme, text: thisFetch.text },
+      { label: "Next week", date: formatMonthDay(nextSunday), reference: korToEnglish(verses[nextIdx].reference), theme: verses[nextIdx].theme, text: nextFetch.text },
     ];
 
-    const newIdx = (safeIdx + 1) % verses.length;
-    saveNextWeekIndex(newIdx);
-
+    saveNextWeekIndex(nextIdx);
+    const cache = getTextCache();
     return NextResponse.json({
       memoryVerses: newVerses,
-      newIndex: newIdx,
+      newIndex: thisIdx,
       total: verses.length,
-      translation,
-      nextVerse: { ...nextEntry, referenceEn: korToEnglish(nextEntry.reference) },
+      ...buildStats(verses, thisIdx, cache),
     });
   }
 

@@ -37,6 +37,7 @@ export interface CalendarBanner {
   label: string;
   startDate: string;
   endDate: string;
+  type?: "retreat" | "seminar" | "camp" | "conference" | "other";
 }
 
 export interface WeeklyRecurringEvent {

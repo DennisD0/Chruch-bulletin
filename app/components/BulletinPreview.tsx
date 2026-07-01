@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useState } from "react";
+import { Fragment, useState, useEffect } from "react";
 import type { BulletinData, CalendarBanner } from "@/lib/bulletin-types";
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
@@ -125,6 +125,14 @@ function VerseRow({ label, date, reference, theme }: {
 }
 
 // ── Monthly calendar grid ──────────────────────────────────────────────────────
+
+const BANNER_PALETTE: Record<string, { bg: string; border: string; text: string }> = {
+  retreat:    { bg: "#D6E8F7", border: "#4472C4", text: "#4472C4" },
+  seminar:    { bg: "#EDE9FE", border: "#7C3AED", text: "#7C3AED" },
+  camp:       { bg: "#DCFCE7", border: "#16A34A", text: "#16A34A" },
+  conference: { bg: "#FEF3C7", border: "#D97706", text: "#D97706" },
+  other:      { bg: "#F1F5F9", border: "#64748B", text: "#64748B" },
+};
 
 function CalGrid({ month, year, events, banners, weeklyRecurring = [], onUpdate }: {
   month: number; year: number;
@@ -285,10 +293,10 @@ function CalGrid({ month, year, events, banners, weeklyRecurring = [], onUpdate 
                   position:"relative", alignSelf:"end", zIndex:1,
                   height:17, boxSizing:"border-box", overflow:"hidden",
                   display:"flex", alignItems:"center", justifyContent:"center",
-                  background:"#D6E8F7",
-                  border:`${RULE}px solid ${BL}`,
+                  background: (BANNER_PALETTE[banner.type ?? "retreat"] ?? BANNER_PALETTE.retreat).bg,
+                  border:`${RULE}px solid ${(BANNER_PALETTE[banner.type ?? "retreat"] ?? BANNER_PALETTE.retreat).border}`,
                 }}>
-                  <span style={{ fontSize:10, color:BL, fontWeight:700, whiteSpace:"nowrap" }}>
+                  <span style={{ fontSize:10, color:(BANNER_PALETTE[banner.type ?? "retreat"] ?? BANNER_PALETTE.retreat).text, fontWeight:700, whiteSpace:"nowrap" }}>
                     <E
                       value={banner.label}
                       onSave={onUpdate ? (v) => {
@@ -390,6 +398,25 @@ export default function BulletinPreview({
   onUpdate?: (patch: Partial<BulletinData>) => void;
 }) {
   const [mm, yyyy] = data.calendarMonth.split("/").map(Number);
+
+  // When the fit-controller shrinks the bible-reading section, bold the cell
+  // text so it remains readable at the reduced scale.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const scales = (e as CustomEvent).detail?.scales as Record<string, number> | undefined;
+      const scale = scales?.["bible-reading"] ?? 1;
+      const preview = document.getElementById("bulletin-preview");
+      if (!preview) return;
+      const section = preview.querySelector<HTMLElement>('[data-fit-section="bible-reading"]');
+      const body = section?.querySelector<HTMLElement>("[data-fit-body]");
+      if (!body) return;
+      const fw = scale < 0.99 ? "700" : "";
+      body.querySelectorAll<HTMLElement>("td").forEach((cell) => { cell.style.fontWeight = fw; });
+    };
+    window.addEventListener("bulletin-fit", handler);
+    return () => window.removeEventListener("bulletin-fit", handler);
+  }, []);
+
   // Reading 1 is always a single short block split into exactly 2 lines
   // (book + chapter range) — it never needs to shrink, so its font size
   // stays fixed.
