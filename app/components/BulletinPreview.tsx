@@ -992,6 +992,39 @@ export default function BulletinPreview({
             ))}
             </div>
           </div>
+
+          {data.retreatInfo?.enabled && (
+            <div data-fit-section="retreat-info" style={{ flexShrink:0, overflow:"hidden" }}>
+              <SecHead title="Retreat" />
+              <div data-fit-body>
+              <div style={{ padding:"2px 0 4px" }}>
+                <p style={{
+                  textAlign:"center", fontWeight:700, color:BL,
+                  fontSize:13, margin:"0 0 5px", paddingBottom:4,
+                  lineHeight:1.3, borderBottom:`${RULE}px solid ${BL}`,
+                }}>
+                  <E value={data.retreatInfo.title} onSave={onUpdate ? (v) => onUpdate({ retreatInfo: { ...data.retreatInfo, title: v, enabled: true } }) : undefined} />
+                </p>
+                <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                  <tbody>
+                    {([
+                      ["DATE",     data.retreatInfo.date,     "date"],
+                      ["LOCATION", data.retreatInfo.location, "location"],
+                      ["SPEAKER",  data.retreatInfo.speaker,  "speaker"],
+                    ] as [string, string, "date"|"location"|"speaker"][]).map(([lbl, val, field]) => (
+                      <tr key={lbl}>
+                        <td style={{ color:BL, fontWeight:700, fontSize:F.body, paddingRight:8, paddingBottom:2, width:60, whiteSpace:"nowrap" }}>{lbl}</td>
+                        <td style={{ fontSize:F.body, color:GR, paddingBottom:2 }}>
+                          <E value={val} onSave={onUpdate ? (v) => onUpdate({ retreatInfo: { ...data.retreatInfo, [field]: v, enabled: true } }) : undefined} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

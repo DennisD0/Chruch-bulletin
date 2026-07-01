@@ -106,4 +106,12 @@ export interface BulletinData {
   jointPrayer: NewsItem[];
 
   seminarInfo: { title: string; date: string; speaker: string };
+
+  retreatInfo: {
+    enabled: boolean;
+    title: string;
+    date: string;
+    location: string;
+    speaker: string;
+  };
 }

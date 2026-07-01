@@ -240,11 +240,26 @@
     ]
   },
   "weeklyRecurring": [
-    { "dayOfWeek": 0, "label": "Sermon" },
-    { "dayOfWeek": 3, "label": "Wed sermon" },
-    { "dayOfWeek": 4, "label": "Teachers'" },
-    { "dayOfWeek": 6, "label": "Translators'" },
-    { "dayOfWeek": 6, "label": "YA'" }
+    {
+      "dayOfWeek": 0,
+      "label": "Sermon"
+    },
+    {
+      "dayOfWeek": 3,
+      "label": "Wed sermon"
+    },
+    {
+      "dayOfWeek": 4,
+      "label": "Teachers'"
+    },
+    {
+      "dayOfWeek": 6,
+      "label": "Translators'"
+    },
+    {
+      "dayOfWeek": 6,
+      "label": "YA'"
+    }
   ],
   "calendarBanners": [
     {
@@ -448,5 +463,12 @@
     "title": "July Grand Bible Seminar",
     "date": "July 13-18: 8PM / July19: 11AM",
     "speaker": "p.Chongkyung Park"
+  },
+  "retreatInfo": {
+    "enabled": false,
+    "title": "",
+    "date": "",
+    "location": "",
+    "speaker": ""
   }
 }

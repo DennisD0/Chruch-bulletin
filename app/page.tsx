@@ -1388,54 +1388,88 @@ function PrayerTab({
     });
   };
 
+  const retreat = data.retreatInfo ?? { enabled: false, title: "", date: "", location: "", speaker: "" };
+  const setRetreat = (patch: Partial<typeof retreat>) =>
+    set({ retreatInfo: { ...retreat, ...patch } });
+
   return (
-    <Card>
-      <SectionTitle>Prayer Requests</SectionTitle>
-      <div className="flex flex-col gap-2">
-        {data.prayerRequests.map((req, i) => (
-          <div
-            key={i}
-            className="flex gap-2 items-center rounded-xl border border-stone-100 p-2"
-          >
-            <div className="flex-1 grid grid-cols-3 gap-2">
-              <Field
-                label="Who (requester)"
-                value={req.who}
-                onChange={(v) => update(i, { who: v })}
-              />
-              <Field
-                label="Whom (person)"
-                value={req.whom}
-                onChange={(v) => update(i, { whom: v })}
-              />
-              <Field
-                label="Relation"
-                value={req.relation}
-                onChange={(v) => update(i, { relation: v })}
+    <div className="flex flex-col gap-5">
+      <Card>
+        <SectionTitle>Prayer Requests</SectionTitle>
+        <div className="flex flex-col gap-2">
+          {data.prayerRequests.map((req, i) => (
+            <div
+              key={i}
+              className="flex gap-2 items-center rounded-xl border border-stone-100 p-2"
+            >
+              <div className="flex-1 grid grid-cols-3 gap-2">
+                <Field
+                  label="Who (requester)"
+                  value={req.who}
+                  onChange={(v) => update(i, { who: v })}
+                />
+                <Field
+                  label="Whom (person)"
+                  value={req.whom}
+                  onChange={(v) => update(i, { whom: v })}
+                />
+                <Field
+                  label="Relation"
+                  value={req.relation}
+                  onChange={(v) => update(i, { relation: v })}
+                />
+              </div>
+              <RemoveBtn
+                onClick={() =>
+                  set({
+                    prayerRequests: data.prayerRequests.filter((_, idx) => idx !== i),
+                  })
+                }
               />
             </div>
-            <RemoveBtn
-              onClick={() =>
-                set({
-                  prayerRequests: data.prayerRequests.filter((_, idx) => idx !== i),
-                })
-              }
-            />
+          ))}
+        </div>
+        <AddBtn
+          onClick={() =>
+            set({
+              prayerRequests: [
+                ...data.prayerRequests,
+                { who: "", whom: "", relation: "" },
+              ],
+            })
+          }
+          label="Add prayer request"
+        />
+      </Card>
+
+      {/* Retreat Info */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: retreat.enabled ? 12 : 0 }}>
+          <SectionTitle>Retreat Info</SectionTitle>
+          <button
+            onClick={() => setRetreat({ enabled: !retreat.enabled })}
+            style={{
+              display: "flex", alignItems: "center", gap: 5,
+              fontSize: 11, fontWeight: 700,
+              color: retreat.enabled ? "#fff" : "#4472C4",
+              background: retreat.enabled ? "#4472C4" : "#EFF6FF",
+              border: `1px solid ${retreat.enabled ? "#4472C4" : "#BFDBFE"}`,
+              borderRadius: 6, padding: "4px 10px", cursor: "pointer", flexShrink: 0,
+            }}
+          >
+            {retreat.enabled ? "Hide" : "Show"}
+          </button>
+        </div>
+        {retreat.enabled && (
+          <div className="flex flex-col gap-3">
+            <Field label="Title" value={retreat.title} onChange={(v) => setRetreat({ title: v })} />
+            <Field label="Date" value={retreat.date} onChange={(v) => setRetreat({ date: v })} />
+            <Field label="Location" value={retreat.location} onChange={(v) => setRetreat({ location: v })} />
+            <Field label="Speaker" value={retreat.speaker} onChange={(v) => setRetreat({ speaker: v })} />
           </div>
-        ))}
-      </div>
-      <AddBtn
-        onClick={() =>
-          set({
-            prayerRequests: [
-              ...data.prayerRequests,
-              { who: "", whom: "", relation: "" },
-            ],
-          })
-        }
-        label="Add prayer request"
-      />
-    </Card>
+        )}
+      </Card>
+    </div>
   );
 }
 
@@ -2700,6 +2734,9 @@ export default function Home() {
               />
               {sec.id === "calendar" && activeTab === "calendar" && data && (
                 <RecurringEventsSidebarPanel data={data} set={patch} />
+              )}
+              {sec.id === "prayer" && activeTab === "prayer" && data && (
+                <PrayerTab data={data} set={patch} />
               )}
             </div>
           ))}
