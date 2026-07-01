@@ -1177,7 +1177,20 @@ export default function Home() {
   useEffect(() => {
     fetch("/api/bulletin")
       .then((r) => r.json())
-      .then(setData);
+      .then(async (bulletin) => {
+        // Auto-populate Bible Reading 1 from the year plan based on bulletin date
+        if (bulletin.date) {
+          try {
+            const res = await fetch(`/api/auto-populate?date=${encodeURIComponent(bulletin.date)}`);
+            if (res.ok) {
+              const { dates, reading1 } = await res.json();
+              bulletin.bibleReadingDates = dates;
+              bulletin.bibleReading1 = reading1;
+            }
+          } catch {}
+        }
+        setData(bulletin);
+      });
   }, []);
 
   const patch = useCallback((p: Partial<BulletinData>) => {
@@ -1227,6 +1240,12 @@ export default function Home() {
                 {savedMsg}
               </span>
             )}
+            <a
+              href="/manage"
+              className="rounded-full border border-blue-900 px-4 py-2 text-sm font-semibold text-blue-900 transition-colors hover:bg-blue-50"
+            >
+              ⚙️ Manage
+            </a>
             <button
               onClick={save}
               disabled={saving || !data}

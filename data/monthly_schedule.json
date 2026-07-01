@@ -1,0 +1,32 @@
+{
+  "coverageStart": "2026-07-01",
+  "coverageEnd": "2026-09-30",
+  "quarter": "Q3 2026",
+  "events": [
+    {
+      "id": "ec-youth-camp-jul",
+      "type": "ec-youth-camp",
+      "label": "EC Youth Camp",
+      "startDate": "2026-07-01",
+      "endDate": "2026-07-04",
+      "location": "KRC"
+    },
+    {
+      "id": "grand-bible-seminar-jul",
+      "type": "grand-bible-seminar",
+      "label": "Grand Bible Seminar",
+      "startDate": "2026-07-06",
+      "endDate": "2026-07-12",
+      "location": "New York",
+      "pastor": "Pastor Park"
+    },
+    {
+      "id": "ya-officer-retreat-jul",
+      "type": "ya-officer-retreat",
+      "label": "YA Officer Retreat",
+      "startDate": "2026-07-24",
+      "endDate": "2026-07-26",
+      "location": "NJ Church"
+    }
+  ]
+}
