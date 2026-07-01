@@ -246,10 +246,30 @@ function ServicesTab({
   const removeRow = (i: number) =>
     set({ services: data.services.filter((_, idx) => idx !== i) });
 
+  const advanceWeek = () => {
+    if (data.services.length < 2) return;
+    const promoted = data.services[1];
+    const rest = data.services.slice(2);
+    const blank: ServiceRow = { date: "", usherSun: "", lunchDuty: "", childCare: "", usherWed: "" };
+    set({ services: [promoted, ...rest, blank] });
+  };
+
   return (
     <div className="flex flex-col gap-5">
       <Card>
-        <SectionTitle>Weekly duty roster</SectionTitle>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <SectionTitle>Weekly duty roster</SectionTitle>
+          {data.services.length >= 2 && (
+            <button
+              onClick={advanceWeek}
+              title="Promote next week to current; add blank row at end"
+              style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, color: "#4472C4", background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: "4px 9px", cursor: "pointer", flexShrink: 0 }}
+            >
+              <ChevronRight size={12} strokeWidth={2.5} />
+              Advance week
+            </button>
+          )}
+        </div>
         {data.services.map((row, i) => (
           <div
             key={i}
@@ -500,16 +520,11 @@ function BibleReadingTab({
 // Sidebar panel: Memory Verses automation
 // ---------------------------------------------------------------------------
 
-type VersePreview = {
+type VerseStats = {
   index: number;
   total: number;
   theme: string;
   themeKorean: string;
-  reference: string;
-  referenceEn: string;
-  text: string;
-  translation: string;
-  cached: boolean;
   hasApiKey: boolean;
   themeNumber: number;
   totalThemes: number;
@@ -526,61 +541,44 @@ function MemoryVersesSidebarPanel({
   data: BulletinData;
   set: (patch: Partial<BulletinData>) => void;
 }) {
-  const [preview, setPreview] = useState<VersePreview | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [stats, setStats] = useState<VerseStats | null>(null);
   const [rolling, setRolling] = useState(false);
   const [rollMsg, setRollMsg] = useState<string | null>(null);
-  const [detecting, setDetecting] = useState(false);
+  const [expandedWeek, setExpandedWeek] = useState<number | null>(null);
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [offsetVerses, setOffsetVerses] = useState<typeof data.memoryVerses>([]);
+  const [offsetLoading, setOffsetLoading] = useState(false);
 
-  const loadPreview = useCallback(async (index?: number) => {
-    setPreviewLoading(true);
-    try {
-      const url = index !== undefined
-        ? `/api/memory-verse?index=${index}`
-        : `/api/memory-verse?date=${encodeURIComponent(data.date)}`;
-      const res = await fetch(url);
-      if (res.ok) setPreview(await res.json());
-    } finally {
-      setPreviewLoading(false);
-    }
+  // Load stats once on mount / when date changes
+  useEffect(() => {
+    fetch(`/api/memory-verse?date=${encodeURIComponent(data.date)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(json => json && setStats(json));
   }, [data.date]);
 
-  useEffect(() => { loadPreview(); }, [loadPreview]);
-
-  const navigate = async (delta: number) => {
-    if (!preview) return;
-    const newIdx = ((preview.index + delta) % preview.total + preview.total) % preview.total;
-    await loadPreview(newIdx);
-    // persist the new position
-    await fetch("/api/memory-verse", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "setIndex", index: newIdx }),
-    });
-  };
-
-  const detectPosition = async () => {
-    const nextWeek = data.memoryVerses.find((v) => v.label === "Next week");
-    if (!nextWeek) return;
-    setDetecting(true);
+  const shiftWeek = useCallback(async (newOffset: number) => {
+    setWeekOffset(newOffset);
+    setExpandedWeek(null);
+    if (newOffset === 0) return;
+    setOffsetLoading(true);
     try {
+      const parts = data.date.split("/").map(Number);
+      const base = new Date(parts[2], parts[0] - 1, parts[1]);
+      const shifted = new Date(base.getTime() + newOffset * 7 * 24 * 60 * 60 * 1000);
+      const shiftedStr = `${shifted.getMonth() + 1}/${shifted.getDate()}/${shifted.getFullYear()}`;
       const res = await fetch("/api/memory-verse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "detect", referenceEn: nextWeek.reference }),
+        body: JSON.stringify({ action: "roll", bulletinDate: shiftedStr }),
       });
       if (res.ok) {
         const json = await res.json();
-        await loadPreview(json.nextWeekIndex);
-        setRollMsg(`Position set — next verse is #${json.nextWeekIndex + 1}`);
-      } else {
-        setRollMsg("Current 'Next week' verse not found in list");
+        setOffsetVerses(json.memoryVerses);
       }
     } finally {
-      setDetecting(false);
-      setTimeout(() => setRollMsg(null), 3000);
+      setOffsetLoading(false);
     }
-  };
+  }, [data.date]);
 
   const roll = async () => {
     setRolling(true);
@@ -594,8 +592,12 @@ function MemoryVersesSidebarPanel({
       if (res.ok) {
         const json = await res.json();
         set({ memoryVerses: json.memoryVerses });
-        await loadPreview(json.newIndex);
+        setWeekOffset(0);
         setRollMsg("Filled!");
+        // refresh stats
+        fetch(`/api/memory-verse?date=${encodeURIComponent(data.date)}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(json => json && setStats(json));
       } else {
         setRollMsg("Failed — check console");
       }
@@ -603,6 +605,14 @@ function MemoryVersesSidebarPanel({
       setRolling(false);
       setTimeout(() => setRollMsg(null), 3000);
     }
+  };
+
+  const displayVerses = weekOffset === 0 ? data.memoryVerses : offsetVerses;
+
+  const btnBase: React.CSSProperties = {
+    flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+    height: 28, borderRadius: 6, fontSize: 11, fontWeight: 700,
+    border: "1px solid #E2E8F0", cursor: "pointer",
   };
 
   return (
@@ -615,95 +625,113 @@ function MemoryVersesSidebarPanel({
             Memory Verse Auto-Fill
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            {preview && (
-              <span style={{ fontSize: 10, color: "#94A3B8" }}>
-                {preview.index + 1}/{preview.total}
-              </span>
-            )}
-            <span style={{
-              fontSize: 10, fontWeight: 800, padding: "1px 6px", borderRadius: 99,
-              background: preview?.text ? "#DCFCE7" : preview?.hasApiKey === false ? "#FEF9C3" : "#F1F5F9",
-              color: preview?.text ? "#15803D" : preview?.hasApiKey === false ? "#A16207" : "#64748B",
-            }}>
-              {previewLoading ? "…" : preview?.text ? "NKJV" : preview?.hasApiKey === false ? "No key" : "—"}
-            </span>
+            {stats && <span style={{ fontSize: 10, color: "#94A3B8" }}>{stats.index + 1}/{stats.total}</span>}
+            <span style={{ fontSize: 10, fontWeight: 800, padding: "1px 6px", borderRadius: 99, background: "#DCFCE7", color: "#15803D" }}>NKJV</span>
           </div>
         </div>
-
-        {/* Overall progress bar */}
         <div style={{ height: 5, background: "#E2E8F0", borderRadius: 99, overflow: "hidden", marginBottom: 5 }}>
           <motion.div
             initial={false}
-            animate={{ width: `${preview?.overallPct ?? 0}%` }}
+            animate={{ width: `${stats?.overallPct ?? 0}%` }}
             transition={{ duration: 0.4, ease: "easeOut" }}
             style={{ height: "100%", background: "#4472C4", borderRadius: 99 }}
           />
         </div>
-
-        {/* Theme + cache stats */}
-        {preview && (
+        {stats && (
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#94A3B8" }}>
-            <span>
-              Theme {preview.themeNumber}/{preview.totalThemes} · {preview.theme} ({preview.themeProgress}/{preview.themeTotal})
-            </span>
-            <span style={{ flexShrink: 0, color: preview.cachedCount > 0 ? "#15803D" : "#94A3B8" }}>
-              {preview.cachedCount} cached
-            </span>
+            <span>Theme {stats.themeNumber}/{stats.totalThemes} · {stats.theme} ({stats.themeProgress}/{stats.themeTotal})</span>
+            <span style={{ flexShrink: 0, color: "#15803D" }}>{stats.cachedCount} cached</span>
           </div>
         )}
       </div>
 
-      {/* ── Next verse preview ──────────────────────── */}
-      <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 7, padding: "9px 10px", minHeight: 50 }}>
-        {previewLoading ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 7, color: "#94A3B8", fontSize: 11 }}>
-            <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", border: "2px solid #BFDBFE", borderTopColor: "#4472C4", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
-            Fetching NKJV…
-          </div>
-        ) : preview ? (
-          <>
-            <div style={{ fontSize: 10.5, color: "#1E3A8A", fontWeight: 700, marginBottom: 3 }}>
-              {preview.themeKorean} · {preview.theme} — {preview.referenceEn}
-              {preview.cached && <span style={{ fontSize: 9, fontWeight: 600, color: "#15803D", marginLeft: 5 }}>●&nbsp;cached</span>}
-            </div>
-            <div style={{ fontSize: 11.5, color: "#1E293B", lineHeight: 1.5, fontStyle: "italic" }}>
-              {preview.text
-                ? (preview.text.length > 140 ? preview.text.slice(0, 137) + "…" : preview.text)
-                : <span style={{ color: "#94A3B8", fontStyle: "normal" }}>NKJV text unavailable — add API key to .env.local</span>}
-            </div>
-          </>
-        ) : (
-          <div style={{ color: "#94A3B8", fontSize: 11 }}>Loading…</div>
+      {/* ── Week navigation ───────────────────────── */}
+      <div style={{ display: "flex", gap: 5 }}>
+        <button
+          onClick={() => shiftWeek(weekOffset - 1)}
+          disabled={offsetLoading}
+          style={{ ...btnBase, background: weekOffset < 0 ? "#1E3A8A" : "#fff", color: weekOffset < 0 ? "#fff" : "#64748B", borderColor: weekOffset < 0 ? "#1E3A8A" : "#E2E8F0" }}
+        >
+          <ChevronLeft size={12} />Last week
+        </button>
+        {weekOffset !== 0 && (
+          <button
+            onClick={() => shiftWeek(0)}
+            style={{ ...btnBase, flex: "none", width: 28, background: "#fff", color: "#4472C4", borderColor: "#BFDBFE" }}
+            title="Back to current week"
+          >
+            ↺
+          </button>
         )}
+        <button
+          onClick={() => shiftWeek(weekOffset + 1)}
+          disabled={offsetLoading}
+          style={{ ...btnBase, background: weekOffset > 0 ? "#1E3A8A" : "#fff", color: weekOffset > 0 ? "#fff" : "#64748B", borderColor: weekOffset > 0 ? "#1E3A8A" : "#E2E8F0" }}
+        >
+          Next week<ChevronRight size={12} />
+        </button>
       </div>
 
-      {/* ── API key notice ──────────────────────────── */}
-      {preview && !preview.hasApiKey && preview.cachedCount < (preview.total ?? 233) && (
-        <div style={{ fontSize: 10, color: "#92400E", background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 6, padding: "5px 9px", lineHeight: 1.5 }}>
-          Add <code style={{ fontFamily: "monospace", fontSize: 9, background: "#FDE68A", borderRadius: 3, padding: "0 3px" }}>BIBLE_API_KEY=…</code> to <code style={{ fontFamily: "monospace", fontSize: 9 }}>.env.local</code> for NKJV (free at scripture.api.bible). Texts are cached locally after first fetch.
+      {/* Offset label */}
+      {weekOffset !== 0 && (
+        <div style={{ fontSize: 10, color: "#4472C4", fontWeight: 700, textAlign: "center", marginTop: -4 }}>
+          {weekOffset < 0
+            ? `${Math.abs(weekOffset)} week${Math.abs(weekOffset) > 1 ? "s" : ""} earlier`
+            : `${weekOffset} week${weekOffset > 1 ? "s" : ""} ahead`}
         </div>
       )}
 
-      {/* ── Position nav ────────────────────────────── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        <button onClick={() => navigate(-1)} disabled={previewLoading}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "#fff", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", flexShrink: 0 }}>
-          <ChevronLeft size={14} />
-        </button>
-        <button onClick={() => navigate(1)} disabled={previewLoading}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, background: "#fff", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", flexShrink: 0 }}>
-          <ChevronRight size={14} />
-        </button>
-        <div style={{ flex: 1 }} />
-        {rollMsg && (
-          <span style={{ fontSize: 10.5, color: "#15803D", fontWeight: 700 }}>{rollMsg}</span>
-        )}
-      </div>
+      {/* ── 3-week cards ──────────────────────────── */}
+      {offsetLoading ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 7, color: "#94A3B8", fontSize: 11, padding: "10px 0" }}>
+          <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", border: "2px solid #BFDBFE", borderTopColor: "#4472C4", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+          Loading…
+        </div>
+      ) : displayVerses.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {displayVerses.map((v, i) => {
+            const isThis = v.label === "This week";
+            const isExpanded = expandedWeek === i;
+            return (
+              <div
+                key={i}
+                onClick={() => setExpandedWeek(isExpanded ? null : i)}
+                style={{
+                  background: isThis ? "#EFF6FF" : "#fff",
+                  border: `1px solid ${isThis ? "#BFDBFE" : "#E2E8F0"}`,
+                  borderRadius: 7, padding: "7px 9px",
+                  cursor: "pointer", userSelect: "none",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: isThis ? "#1E3A8A" : "#64748B" }}>
+                    {v.label}{v.date ? ` (${v.date})` : ""}
+                  </span>
+                  <span style={{ fontSize: 10, color: "#94A3B8" }}>{v.theme}</span>
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#334155", marginTop: 2 }}>{v.reference}</div>
+                {isExpanded && v.text && (
+                  <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.5, fontStyle: "italic", marginTop: 5, borderTop: "1px solid #E2E8F0", paddingTop: 5 }}>
+                    {v.text}
+                  </div>
+                )}
+                {!isExpanded && v.text && (
+                  <div style={{ fontSize: 10.5, color: "#94A3B8", fontStyle: "italic", marginTop: 2 }}>
+                    {v.text.length > 70 ? v.text.slice(0, 67) + "…" : v.text}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ fontSize: 11, color: "#94A3B8", padding: "6px 0" }}>No verses loaded — click Sync Verses.</div>
+      )}
 
-      {/* ── Roll button ─────────────────────────────── */}
+      {/* ── Sync button ───────────────────────────── */}
       <motion.button
         onClick={roll}
-        disabled={rolling || previewLoading}
+        disabled={rolling}
         whileHover={!rolling ? { scale: 1.015 } : undefined}
         whileTap={!rolling ? { scale: 0.97 } : undefined}
         transition={{ duration: 0.13 }}
@@ -718,6 +746,7 @@ function MemoryVersesSidebarPanel({
         <RefreshCw size={13} strokeWidth={2.5} style={{ animation: rolling ? "spin 0.8s linear infinite" : undefined, flexShrink: 0 }} />
         {rolling ? "Syncing…" : "Sync Verses"}
       </motion.button>
+      {rollMsg && <div style={{ fontSize: 10.5, color: "#15803D", fontWeight: 700, textAlign: "center", marginTop: -4 }}>{rollMsg}</div>}
       <div style={{ fontSize: 9.5, color: "#94A3B8", lineHeight: 1.45 }}>
         Auto-fills Last / This / Next week from the bulletin's date field.
       </div>
@@ -828,34 +857,38 @@ function RecurringEventsSidebarPanel({
             <div key={i} style={{
               marginBottom: 8, borderRadius: 8, border: `1px solid #E2E8F0`,
               borderLeftWidth: 3, borderLeftColor: "#4472C4",
-              padding: "8px 10px", background: "#fff",
+              padding: "8px 10px", background: "#fff", display: "flex", flexDirection: "column", gap: 5,
             }}>
-              {/* Label + dates */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px auto", gap: 4, alignItems: "center" }}>
+              {/* Label row */}
+              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                 <input
                   placeholder="Event name"
                   value={banner.label}
                   onChange={(e) => set({ calendarBanners: (data.calendarBanners ?? []).map((b, j) => j === i ? { ...b, label: e.target.value } : b) })}
-                  style={{ borderRadius: 5, border: "1px solid #E2E8F0", padding: "3px 6px", fontSize: 11, color: "#334155", minWidth: 0 }}
-                />
-                <input
-                  placeholder="Start"
-                  title="Start date (M/D)"
-                  value={banner.startDate}
-                  onChange={(e) => set({ calendarBanners: (data.calendarBanners ?? []).map((b, j) => j === i ? { ...b, startDate: e.target.value } : b) })}
-                  style={{ borderRadius: 5, border: "1px solid #E2E8F0", padding: "3px 6px", fontSize: 11, color: "#334155", textAlign: "center" }}
-                />
-                <input
-                  placeholder="End"
-                  title="End date (M/D)"
-                  value={banner.endDate}
-                  onChange={(e) => set({ calendarBanners: (data.calendarBanners ?? []).map((b, j) => j === i ? { ...b, endDate: e.target.value } : b) })}
-                  style={{ borderRadius: 5, border: "1px solid #E2E8F0", padding: "3px 6px", fontSize: 11, color: "#334155", textAlign: "center" }}
+                  style={{ flex: 1, borderRadius: 5, border: "1px solid #E2E8F0", padding: "3px 6px", fontSize: 11, color: "#334155", minWidth: 0 }}
                 />
                 <button
                   onClick={() => set({ calendarBanners: (data.calendarBanners ?? []).filter((_, j) => j !== i) })}
-                  style={{ borderRadius: 5, background: "none", border: "1px solid #E2E8F0", color: "#94A3B8", cursor: "pointer", padding: "3px 6px", fontSize: 12, fontWeight: 700, lineHeight: 1 }}
+                  style={{ borderRadius: 5, background: "none", border: "1px solid #E2E8F0", color: "#94A3B8", cursor: "pointer", padding: "3px 6px", fontSize: 12, fontWeight: 700, lineHeight: 1, flexShrink: 0 }}
                 >×</button>
+              </div>
+              {/* Date row */}
+              <div style={{ display: "flex", gap: 4, alignItems: "center", minWidth: 0 }}>
+                <input
+                  placeholder="Start (M/D)"
+                  title="Start date (M/D)"
+                  value={banner.startDate}
+                  onChange={(e) => set({ calendarBanners: (data.calendarBanners ?? []).map((b, j) => j === i ? { ...b, startDate: e.target.value } : b) })}
+                  style={{ flex: 1, minWidth: 0, borderRadius: 5, border: "1px solid #E2E8F0", padding: "3px 6px", fontSize: 11, color: "#334155", textAlign: "center" }}
+                />
+                <span style={{ fontSize: 11, color: "#94A3B8", flexShrink: 0 }}>→</span>
+                <input
+                  placeholder="End (M/D)"
+                  title="End date (M/D)"
+                  value={banner.endDate}
+                  onChange={(e) => set({ calendarBanners: (data.calendarBanners ?? []).map((b, j) => j === i ? { ...b, endDate: e.target.value } : b) })}
+                  style={{ flex: 1, minWidth: 0, borderRadius: 5, border: "1px solid #E2E8F0", padding: "3px 6px", fontSize: 11, color: "#334155", textAlign: "center" }}
+                />
               </div>
             </div>
           );
@@ -1061,69 +1094,38 @@ function CalendarTab({
         <p className="text-[11px] text-stone-400 -mt-2">
           Blue boxes that span a date range in the calendar — retreats, seminars, camps, etc.
         </p>
-        {data.calendarBanners.map((banner, i) => {
-          const activeType = banner.type ?? "retreat";
-          const activePalette = BANNER_TYPES.find(t => t.value === activeType) ?? BANNER_TYPES[0];
-          return (
-            <div
-              key={i}
-              className="flex gap-2 items-start rounded-xl border border-stone-100 p-3"
-              style={{ borderLeftWidth: 3, borderLeftColor: activePalette.color }}
-            >
-              <div className="flex-1 flex flex-col gap-3">
-                {/* Type selector pills */}
-                <div className="flex flex-wrap gap-1.5">
-                  {BANNER_TYPES.map((t) => (
-                    <button
-                      key={t.value}
-                      onClick={() => updateBanner(i, { type: t.value })}
-                      style={{
-                        padding: "2px 9px",
-                        borderRadius: 99,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        border: `1.5px solid ${t.color}`,
-                        background: activeType === t.value ? t.bg : "transparent",
-                        color: t.color,
-                        cursor: "pointer",
-                        opacity: activeType === t.value ? 1 : 0.45,
-                      }}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-                {/* Label + dates */}
-                <div className="grid grid-cols-3 gap-3">
-                  <Field
-                    label="Label"
-                    value={banner.label}
-                    onChange={(v) => updateBanner(i, { label: v })}
-                  />
-                  <Field
-                    label="Start (M/D)"
-                    value={banner.startDate}
-                    onChange={(v) => updateBanner(i, { startDate: v })}
-                  />
-                  <Field
-                    label="End (M/D)"
-                    value={banner.endDate}
-                    onChange={(v) => updateBanner(i, { endDate: v })}
-                  />
-                </div>
-              </div>
-              <RemoveBtn
-                onClick={() =>
-                  set({
-                    calendarBanners: data.calendarBanners.filter(
-                      (_, idx) => idx !== i
-                    ),
-                  })
-                }
+        {data.calendarBanners.map((banner, i) => (
+          <div
+            key={i}
+            className="flex gap-2 items-start rounded-xl border border-stone-100 p-3"
+            style={{ borderLeftWidth: 3, borderLeftColor: "#4472C4" }}
+          >
+            <div className="flex-1 flex flex-col gap-2">
+              <Field
+                label="Event name"
+                value={banner.label}
+                onChange={(v) => updateBanner(i, { label: v })}
               />
+              <div className="grid grid-cols-2 gap-2">
+                <Field
+                  label="Start (M/D)"
+                  value={banner.startDate}
+                  onChange={(v) => updateBanner(i, { startDate: v })}
+                />
+                <Field
+                  label="End (M/D)"
+                  value={banner.endDate}
+                  onChange={(v) => updateBanner(i, { endDate: v })}
+                />
+              </div>
             </div>
-          );
-        })}
+            <RemoveBtn
+              onClick={() =>
+                set({ calendarBanners: data.calendarBanners.filter((_, idx) => idx !== i) })
+              }
+            />
+          </div>
+        ))}
         <AddBtn
           onClick={() =>
             set({

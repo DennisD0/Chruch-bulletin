@@ -697,7 +697,7 @@ export default function BulletinPreview({
                 {data.services.map((r,i) => (
                   <tr key={i}>
                     {(["date","usherSun","lunchDuty","childCare","usherWed"] as const).map((field,j) => (
-                      <TD key={j} top xs>
+                      <TD key={j} xs center>
                         <span style={{ whiteSpace:"pre-line" }}>
                           <E value={r[field]} onSave={upA(data.services,"services",i,field)} />
                         </span>
@@ -907,15 +907,15 @@ export default function BulletinPreview({
                         <td rowSpan={day.items.length} style={{
                           fontWeight:700, fontSize:F.body,
                           padding:"2px 6px 2px 0",
-                          verticalAlign:"top", whiteSpace:"nowrap",
+                          verticalAlign:"middle", whiteSpace:"nowrap",
                           borderBottom:`0.5px solid ${LG}`, color:"#000",
                         }}>
                           <E value={day.date} onSave={onUpdate ? (v) => onUpdate({ weekSchedule: data.weekSchedule.map((d,x) => x===di ? {...d, date:v} : d) }) : undefined} />
                         </td>
                       )}
-                      <TD top xs><E value={item.name}     onSave={onUpdate ? (v) => onUpdate({ weekSchedule: data.weekSchedule.map((d,x) => x===di ? {...d, items: d.items.map((it,y) => y===ii ? {...it, name:v} : it)} : d) }) : undefined} /></TD>
-                      <TD top xs><E value={item.location} onSave={onUpdate ? (v) => onUpdate({ weekSchedule: data.weekSchedule.map((d,x) => x===di ? {...d, items: d.items.map((it,y) => y===ii ? {...it, location:v} : it)} : d) }) : undefined} /></TD>
-                      <TD top xs noWrap><E value={item.time} onSave={onUpdate ? (v) => onUpdate({ weekSchedule: data.weekSchedule.map((d,x) => x===di ? {...d, items: d.items.map((it,y) => y===ii ? {...it, time:v} : it)} : d) }) : undefined} /></TD>
+                      <TD xs><E value={item.name}     onSave={onUpdate ? (v) => onUpdate({ weekSchedule: data.weekSchedule.map((d,x) => x===di ? {...d, items: d.items.map((it,y) => y===ii ? {...it, name:v} : it)} : d) }) : undefined} /></TD>
+                      <TD xs><E value={item.location} onSave={onUpdate ? (v) => onUpdate({ weekSchedule: data.weekSchedule.map((d,x) => x===di ? {...d, items: d.items.map((it,y) => y===ii ? {...it, location:v} : it)} : d) }) : undefined} /></TD>
+                      <TD xs noWrap><E value={item.time} onSave={onUpdate ? (v) => onUpdate({ weekSchedule: data.weekSchedule.map((d,x) => x===di ? {...d, items: d.items.map((it,y) => y===ii ? {...it, time:v} : it)} : d) }) : undefined} /></TD>
                     </tr>
                   ))
                 )}
