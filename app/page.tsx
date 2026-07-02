@@ -2006,24 +2006,25 @@ function FloatingToolbar({
     }}>
       {/* Main pill — layered frosted glass */}
       <div style={{ position: "relative", display: "inline-flex", borderRadius: 14 }}>
-        {/* Blur + tint layer */}
+        {/* Liquid glass layer — filter distorts the blurred backdrop */}
         <div style={{
           position: "absolute", inset: 0, borderRadius: 14,
-          backdropFilter: "blur(28px) saturate(2) brightness(1.08)",
-          WebkitBackdropFilter: "blur(28px) saturate(2) brightness(1.08)",
-          background: "rgba(18,20,36,0.52)",
+          filter: "url(#radio-glass)",
+          backdropFilter: "blur(26px) saturate(2) brightness(1.06)",
+          WebkitBackdropFilter: "blur(26px) saturate(2) brightness(1.06)",
+          background: "rgba(18,20,36,0.46)",
         }} />
-        {/* Top highlight gradient — simulates glass surface */}
+        {/* Top highlight gradient — glass surface gloss */}
         <div style={{
           position: "absolute", inset: 0, borderRadius: 14,
-          background: "linear-gradient(175deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.03) 45%, transparent 100%)",
+          background: "linear-gradient(175deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.04) 45%, transparent 100%)",
           pointerEvents: "none",
         }} />
         {/* Border + shadow */}
         <div style={{
           position: "absolute", inset: 0, borderRadius: 14,
-          border: "1px solid rgba(255,255,255,0.18)",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.22)",
+          border: "1px solid rgba(255,255,255,0.22)",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.25)",
           pointerEvents: "none",
         }} />
         <div className="floating-main-pill" style={pillStyle}>
@@ -2264,11 +2265,35 @@ function NavItem({
         <motion.div
           layoutId="nav-active-highlight"
           transition={{ type: "spring", stiffness: 500, damping: 40 }}
-          style={{
+          style={{ position: "absolute", inset: 0, overflow: "hidden" }}
+        >
+          {/* Liquid glass tinted fill */}
+          <div style={{
             position: "absolute", inset: 0,
-            background: "#EEF3FB", borderLeft: "3px solid #4472C4",
-          }}
-        />
+            filter: "url(#radio-glass)",
+            background: "rgba(68,114,196,0.12)",
+            backdropFilter: "blur(10px) saturate(1.8)",
+            WebkitBackdropFilter: "blur(10px) saturate(1.8)",
+          }} />
+          {/* Glass shimmer */}
+          <div style={{
+            position: "absolute", inset: 0,
+            background: "linear-gradient(170deg, rgba(255,255,255,0.2) 0%, transparent 55%)",
+            pointerEvents: "none",
+          }} />
+          {/* Left accent bar */}
+          <div style={{
+            position: "absolute", left: 0, top: 0, bottom: 0, width: 3,
+            background: "linear-gradient(180deg, #4472C4, #1E3A8A)",
+          }} />
+          {/* Subtle border */}
+          <div style={{
+            position: "absolute", inset: 0,
+            borderTop: "1px solid rgba(68,114,196,0.18)",
+            borderBottom: "1px solid rgba(68,114,196,0.18)",
+            pointerEvents: "none",
+          }} />
+        </motion.div>
       )}
       <Icon
         size={17} strokeWidth={2} style={{
@@ -2396,12 +2421,30 @@ function SectionEditorPanel({
       }}
     >
       <div style={{
-        flexShrink: 0, height: 68,
-        background: "linear-gradient(135deg,#1a3370 0%,#2d55aa 55%,#4472C4 100%)",
+        flexShrink: 0, height: 68, position: "relative",
         display: "flex", alignItems: "center", justifyContent: "space-between",
         gap: 12, padding: "0 16px 0 18px",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+        {/* Liquid glass gradient background */}
+        <div style={{
+          position: "absolute", inset: 0,
+          filter: "url(#radio-glass)",
+          background: "linear-gradient(135deg,#1a3370 0%,#2d55aa 55%,#4472C4 100%)",
+        }} />
+        {/* Glass shimmer overlay */}
+        <div style={{
+          position: "absolute", inset: 0,
+          background: "linear-gradient(170deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.04) 50%, transparent 100%)",
+          pointerEvents: "none",
+        }} />
+        {/* Bottom border shine */}
+        <div style={{
+          position: "absolute", left: 0, right: 0, bottom: 0, height: 1,
+          background: "rgba(255,255,255,0.12)",
+          pointerEvents: "none",
+        }} />
+        {/* Content — sits above glass layers */}
+        <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
           {section && (
             <div style={{
               width: 36, height: 36, flexShrink: 0, borderRadius: 10,
@@ -2426,6 +2469,7 @@ function SectionEditorPanel({
           onClick={onClose}
           aria-label="Close section editor"
           style={{
+            position: "relative", zIndex: 1,
             width: 32, height: 32, flexShrink: 0,
             display: "grid", placeItems: "center", borderRadius: 8,
             border: "1px solid rgba(255,255,255,0.25)",
@@ -2856,6 +2900,19 @@ export default function Home() {
 
   return (
     <div className="editor-shell" style={{ display: "flex", height: "100vh", overflow: "hidden", fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
+
+      {/* ── Global liquid glass SVG filter (shared by toolbar, nav, panel header) ── */}
+      <svg style={{ position: "absolute", width: 0, height: 0, overflow: "hidden", pointerEvents: "none" }} aria-hidden="true">
+        <defs>
+          <filter id="radio-glass" x="0%" y="0%" width="100%" height="100%" colorInterpolationFilters="sRGB">
+            <feTurbulence type="fractalNoise" baseFrequency="0.05 0.05" numOctaves="1" seed="1" result="turbulence" />
+            <feGaussianBlur {...{"in": "turbulence"}} stdDeviation="2" result="blurredNoise" />
+            <feDisplacementMap {...{"in": "SourceGraphic", "in2": "blurredNoise"}} scale="30" xChannelSelector="R" yChannelSelector="B" result="displaced" />
+            <feGaussianBlur {...{"in": "displaced"}} stdDeviation="2" result="finalBlur" />
+            <feComposite {...{"in": "finalBlur", "in2": "finalBlur"}} operator="over" />
+          </filter>
+        </defs>
+      </svg>
 
       {uploadTarget && (
         <UploadModal
