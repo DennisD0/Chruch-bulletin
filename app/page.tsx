@@ -1982,17 +1982,11 @@ function FloatingToolbar({
   onRedo: () => void;
 }) {
   const pillStyle: React.CSSProperties = {
+    position: "relative", zIndex: 1,
     display: "inline-flex", alignItems: "center",
-    background: "rgba(10,10,18,0.88)",
-    backdropFilter: "blur(24px)",
-    WebkitBackdropFilter: "blur(24px)",
-    border: "1px solid rgba(255,255,255,0.09)",
-    borderRadius: 14,
-    padding: "5px 7px",
-    gap: 2,
-    boxShadow: "0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.05)",
-    userSelect: "none",
-    overflow: "visible",
+    borderRadius: 14, padding: "5px 7px", gap: 2,
+    background: "transparent",
+    userSelect: "none", overflow: "visible",
   };
 
   const btnBase: React.CSSProperties = {
@@ -2010,8 +2004,37 @@ function FloatingToolbar({
       display: "flex", alignItems: "center", gap: 8,
       zIndex: 30, pointerEvents: "all",
     }}>
-      {/* Main pill */}
-      <div className="floating-main-pill" style={pillStyle}>
+      {/* Liquid glass SVG filter */}
+      <svg style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }} aria-hidden="true">
+        <defs>
+          <filter id="liquid-glass" x="-10%" y="-10%" width="120%" height="120%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.065 0.065" numOctaves="1" seed="3" result="turbulence" />
+            <feGaussianBlur {...{"in": "turbulence"}} stdDeviation="1.5" result="blurredNoise" />
+            <feDisplacementMap {...{"in": "SourceGraphic", "in2": "blurredNoise"}} scale="18" xChannelSelector="R" yChannelSelector="B" result="displaced" />
+            <feGaussianBlur {...{"in": "displaced"}} stdDeviation="0.8" />
+          </filter>
+        </defs>
+      </svg>
+
+      {/* Main pill — glass wrapper holds backdrop layers, pill holds buttons */}
+      <div style={{ position: "relative", display: "inline-flex", borderRadius: 14 }}>
+        {/* Liquid glass background layer */}
+        <div style={{
+          position: "absolute", inset: 0, borderRadius: 14,
+          overflow: "hidden",
+          filter: "url(#liquid-glass)",
+          background: "rgba(12,14,26,0.82)",
+          backdropFilter: "blur(22px) saturate(1.4)",
+          WebkitBackdropFilter: "blur(22px) saturate(1.4)",
+        }} />
+        {/* Crisp border + shadow overlay (no filter) */}
+        <div style={{
+          position: "absolute", inset: 0, borderRadius: 14,
+          border: "1px solid rgba(255,255,255,0.11)",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.07), inset 0 -1px 0 rgba(0,0,0,0.18)",
+          pointerEvents: "none",
+        }} />
+        <div className="floating-main-pill" style={pillStyle}>
         {/* Mode tools */}
         {CANVAS_TOOLS.map(({ id, label, shortcut, Icon }) => {
           const active = mode === id;
@@ -2089,7 +2112,8 @@ function FloatingToolbar({
             <Redo2 size={15} strokeWidth={2} style={{ position: "relative", zIndex: 1 }} />
           </button>
         </ToolbarTooltip>
-      </div>
+        </div>{/* /floating-main-pill */}
+      </div>{/* /glass wrapper */}
 
       {/* Export button — separate accent pill */}
       <ToolbarTooltip text="Export PDF">
