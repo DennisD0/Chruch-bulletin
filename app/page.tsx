@@ -1279,8 +1279,15 @@ function NewsTab({
   data: BulletinData;
   set: (patch: Partial<BulletinData>) => void;
 }) {
+  const MAX_NEWS = 5;
   const updateNews = (i: number, patch: Partial<NewsItem>) => {
     set({ news: data.news.map((n, idx) => (idx === i ? { ...n, ...patch } : n)) });
+  };
+  const deleteNews = (i: number) =>
+    set({ news: data.news.filter((_, idx) => idx !== i) });
+  const addNews = () => {
+    if (data.news.length < MAX_NEWS)
+      set({ news: [...data.news, { title: "", body: "" }] });
   };
   const updateJoint = (i: number, patch: Partial<NewsItem>) => {
     set({
@@ -1294,38 +1301,29 @@ function NewsTab({
     <div className="flex flex-col gap-5">
       <Card>
         <SectionTitle>NY Church News</SectionTitle>
-        {data.news.map((item, i) => (
-          <div
-            key={i}
-            className="flex gap-2 items-start rounded-xl border border-stone-100 p-3"
-          >
-            <div className="flex-1 flex flex-col gap-3">
-              <Field
-                label="Title"
-                value={item.title}
-                onChange={(v) => updateNews(i, { title: v })}
-              />
-              <Field
-                label="Body"
-                value={item.body}
-                onChange={(v) => updateNews(i, { body: v })}
-                multiline
-                rows={3}
-              />
-            </div>
-            <RemoveBtn
-              onClick={() =>
-                set({ news: data.news.filter((_, idx) => idx !== i) })
-              }
-            />
-          </div>
-        ))}
-        <AddBtn
-          onClick={() =>
-            set({ news: [...data.news, { title: "", body: "" }] })
+        {Array.from({ length: MAX_NEWS }, (_, i) => {
+          const item = data.news[i];
+          if (item) {
+            return (
+              <div key={i} className="flex gap-2 items-start rounded-xl border border-stone-100 p-3">
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#4472C4", width: 16, paddingTop: 6, flexShrink: 0 }}>{i + 1}</div>
+                <div className="flex-1 flex flex-col gap-3">
+                  <Field label="Title" value={item.title} onChange={(v) => updateNews(i, { title: v })} />
+                  <Field label="Body" value={item.body} onChange={(v) => updateNews(i, { body: v })} multiline rows={3} />
+                </div>
+                <RemoveBtn onClick={() => deleteNews(i)} />
+              </div>
+            );
           }
-          label="Add news item"
-        />
+          return (
+            <div key={i} className="flex gap-2 items-center rounded-xl border border-dashed border-stone-200 p-3" style={{ opacity: 0.5 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#94A3B8", width: 16, flexShrink: 0 }}>{i + 1}</div>
+              <button onClick={addNews} style={{ fontSize: 12, color: "#94A3B8", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                + Add news item
+              </button>
+            </div>
+          );
+        })}
       </Card>
 
       <Card>
