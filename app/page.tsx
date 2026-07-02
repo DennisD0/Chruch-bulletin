@@ -2984,7 +2984,7 @@ export default function Home() {
           display: none;
         }
 
-        @media (max-width: 720px) {
+        @media (max-width: 1180px), (hover: none) and (pointer: coarse) {
           .editor-shell {
             height: 100dvh !important;
             flex-direction: column !important;
