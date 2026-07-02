@@ -1285,6 +1285,13 @@ function NewsTab({
   };
   const deleteNews = (i: number) =>
     set({ news: data.news.filter((_, idx) => idx !== i) });
+  const moveNews = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= data.news.length) return;
+    const next = [...data.news];
+    [next[i], next[j]] = [next[j], next[i]];
+    set({ news: next });
+  };
   const addNews = () => {
     if (data.news.length < MAX_NEWS)
       set({ news: [...data.news, { title: "", body: "" }] });
@@ -1306,7 +1313,11 @@ function NewsTab({
           if (item) {
             return (
               <div key={i} className="flex gap-2 items-start rounded-xl border border-stone-100 p-3">
-                <div style={{ fontSize: 11, fontWeight: 800, color: "#4472C4", width: 16, paddingTop: 6, flexShrink: 0 }}>{i + 1}</div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#4472C4", width: 16, textAlign: "center" }}>{i + 1}</div>
+                  <button onClick={() => moveNews(i, -1)} disabled={i === 0} style={{ background: "none", border: "none", cursor: i === 0 ? "default" : "pointer", padding: "1px 2px", color: i === 0 ? "#CBD5E1" : "#64748B", lineHeight: 1 }} title="Move up">▲</button>
+                  <button onClick={() => moveNews(i, 1)} disabled={i === data.news.length - 1} style={{ background: "none", border: "none", cursor: i === data.news.length - 1 ? "default" : "pointer", padding: "1px 2px", color: i === data.news.length - 1 ? "#CBD5E1" : "#64748B", lineHeight: 1 }} title="Move down">▼</button>
+                </div>
                 <div className="flex-1 flex flex-col gap-3">
                   <Field label="Title" value={item.title} onChange={(v) => updateNews(i, { title: v })} />
                   <Field label="Body" value={item.body} onChange={(v) => updateNews(i, { body: v })} multiline rows={3} />
