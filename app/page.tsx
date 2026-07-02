@@ -2004,34 +2004,26 @@ function FloatingToolbar({
       display: "flex", alignItems: "center", gap: 8,
       zIndex: 30, pointerEvents: "all",
     }}>
-      {/* Liquid glass SVG filter */}
-      <svg style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }} aria-hidden="true">
-        <defs>
-          <filter id="liquid-glass" x="-10%" y="-10%" width="120%" height="120%">
-            <feTurbulence type="fractalNoise" baseFrequency="0.065 0.065" numOctaves="1" seed="3" result="turbulence" />
-            <feGaussianBlur {...{"in": "turbulence"}} stdDeviation="1.5" result="blurredNoise" />
-            <feDisplacementMap {...{"in": "SourceGraphic", "in2": "blurredNoise"}} scale="18" xChannelSelector="R" yChannelSelector="B" result="displaced" />
-            <feGaussianBlur {...{"in": "displaced"}} stdDeviation="0.8" />
-          </filter>
-        </defs>
-      </svg>
-
-      {/* Main pill — glass wrapper holds backdrop layers, pill holds buttons */}
+      {/* Main pill — layered frosted glass */}
       <div style={{ position: "relative", display: "inline-flex", borderRadius: 14 }}>
-        {/* Liquid glass background layer */}
+        {/* Blur + tint layer */}
         <div style={{
           position: "absolute", inset: 0, borderRadius: 14,
-          overflow: "hidden",
-          filter: "url(#liquid-glass)",
-          background: "rgba(12,14,26,0.82)",
-          backdropFilter: "blur(22px) saturate(1.4)",
-          WebkitBackdropFilter: "blur(22px) saturate(1.4)",
+          backdropFilter: "blur(28px) saturate(2) brightness(1.08)",
+          WebkitBackdropFilter: "blur(28px) saturate(2) brightness(1.08)",
+          background: "rgba(18,20,36,0.52)",
         }} />
-        {/* Crisp border + shadow overlay (no filter) */}
+        {/* Top highlight gradient — simulates glass surface */}
         <div style={{
           position: "absolute", inset: 0, borderRadius: 14,
-          border: "1px solid rgba(255,255,255,0.11)",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.07), inset 0 -1px 0 rgba(0,0,0,0.18)",
+          background: "linear-gradient(175deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.03) 45%, transparent 100%)",
+          pointerEvents: "none",
+        }} />
+        {/* Border + shadow */}
+        <div style={{
+          position: "absolute", inset: 0, borderRadius: 14,
+          border: "1px solid rgba(255,255,255,0.18)",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.22)",
           pointerEvents: "none",
         }} />
         <div className="floating-main-pill" style={pillStyle}>
