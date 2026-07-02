@@ -1984,7 +1984,7 @@ function FloatingToolbar({
   const pillStyle: React.CSSProperties = {
     position: "relative", zIndex: 1,
     display: "inline-flex", alignItems: "center",
-    borderRadius: 14, padding: "5px 7px", gap: 2,
+    borderRadius: 999, padding: "5px 10px", gap: 2,
     background: "transparent",
     userSelect: "none", overflow: "visible",
   };
@@ -2004,27 +2004,27 @@ function FloatingToolbar({
       display: "flex", alignItems: "center", gap: 8,
       zIndex: 30, pointerEvents: "all",
     }}>
-      {/* Main pill — layered frosted glass */}
-      <div style={{ position: "relative", display: "inline-flex", borderRadius: 14 }}>
-        {/* Liquid glass layer — filter distorts the blurred backdrop */}
+      {/* Main pill — liquid glass */}
+      <div style={{ position: "relative", display: "inline-flex", borderRadius: 999 }}>
+        {/* Liquid glass layer — backdrop blur + SVG displacement */}
         <div style={{
-          position: "absolute", inset: 0, borderRadius: 14,
+          position: "absolute", inset: 0, borderRadius: 999,
           filter: "url(#radio-glass)",
-          backdropFilter: "blur(26px) saturate(2) brightness(1.06)",
-          WebkitBackdropFilter: "blur(26px) saturate(2) brightness(1.06)",
-          background: "rgba(18,20,36,0.46)",
+          backdropFilter: "blur(22px) saturate(1.8) brightness(1.12)",
+          WebkitBackdropFilter: "blur(22px) saturate(1.8) brightness(1.12)",
+          background: "rgba(255,255,255,0.08)",
         }} />
-        {/* Top highlight gradient — glass surface gloss */}
+        {/* Top shimmer — glass surface highlight */}
         <div style={{
-          position: "absolute", inset: 0, borderRadius: 14,
-          background: "linear-gradient(175deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.04) 45%, transparent 100%)",
+          position: "absolute", inset: 0, borderRadius: 999,
+          background: "linear-gradient(170deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.06) 45%, transparent 100%)",
           pointerEvents: "none",
         }} />
         {/* Border + shadow */}
         <div style={{
-          position: "absolute", inset: 0, borderRadius: 14,
-          border: "1px solid rgba(255,255,255,0.22)",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.25)",
+          position: "absolute", inset: 0, borderRadius: 999,
+          border: "1.5px solid rgba(255,255,255,0.45)",
+          boxShadow: "0 4px 24px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.4)",
           pointerEvents: "none",
         }} />
         <div className="floating-main-pill" style={pillStyle}>
@@ -2035,7 +2035,7 @@ function FloatingToolbar({
             <ToolbarTooltip key={id} text={`${label}  ${shortcut}`}>
               <button
                 onClick={() => onMode(id)}
-                style={{ ...btnBase, color: active ? "#fff" : "rgba(255,255,255,0.45)" }}
+                style={{ ...btnBase, color: active ? "#fff" : "rgba(255,255,255,0.75)" }}
                 aria-label={label}
                 aria-pressed={active}
               >
@@ -2045,9 +2045,10 @@ function FloatingToolbar({
                     transition={{ type: "spring", stiffness: 520, damping: 36 }}
                     style={{
                       position: "absolute", inset: 0,
-                      borderRadius: 9,
-                      background: "rgba(68,114,196,0.85)",
-                      boxShadow: "0 2px 8px rgba(68,114,196,0.4)",
+                      borderRadius: 10,
+                      background: "rgba(68,114,196,0.75)",
+                      backdropFilter: "blur(8px)",
+                      boxShadow: "0 2px 10px rgba(68,114,196,0.45)",
                     }}
                   />
                 )}
@@ -2066,7 +2067,7 @@ function FloatingToolbar({
         })}
 
         {/* Separator */}
-        <div style={{ width: 1, height: 24, background: "rgba(255,255,255,0.1)", margin: "0 4px", flexShrink: 0 }} />
+        <div style={{ width: 1, height: 24, background: "rgba(255,255,255,0.3)", margin: "0 4px", flexShrink: 0 }} />
 
         {/* Fit to screen */}
         <ToolbarTooltip text="Fit to Screen  ⌃0">
@@ -2080,7 +2081,7 @@ function FloatingToolbar({
         </ToolbarTooltip>
 
         {/* Separator */}
-        <div style={{ width: 1, height: 24, background: "rgba(255,255,255,0.1)", margin: "0 4px", flexShrink: 0 }} />
+        <div style={{ width: 1, height: 24, background: "rgba(255,255,255,0.3)", margin: "0 4px", flexShrink: 0 }} />
 
         {/* Undo */}
         <ToolbarTooltip text="Undo  Ctrl+Z">
