@@ -977,7 +977,11 @@ export default function BulletinPreview({
             </div>
           </div>
 
-          <div data-fit-section="joint-prayer" style={{ flex:1, overflow:"hidden" }}>
+          <div data-fit-section="joint-prayer" style={{
+            flex: data.retreatInfo?.enabled ? undefined : 1,
+            height: data.retreatInfo?.enabled ? 190 : undefined,
+            overflow:"hidden",
+          }}>
             <SecHead title="Joint Prayer" />
             <div data-fit-body>
             {data.jointPrayer.map((item,i) => (
@@ -994,7 +998,7 @@ export default function BulletinPreview({
           </div>
 
           {data.retreatInfo?.enabled && (
-            <div data-fit-section="retreat-info" style={{ flexShrink:0, overflow:"hidden" }}>
+            <div data-fit-section="retreat-info" style={{ flex:1, overflow:"hidden" }}>
               <SecHead title="Retreat Schedule" />
               <div data-fit-body>
               <div style={{ padding:"2px 0 4px" }}>
